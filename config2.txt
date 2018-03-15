@@ -1,0 +1,19 @@
+# Configuration file for CS 6380 Project 1 (Spring 2018)
+#
+# As per the "shell" convention, anything following a hash sign is
+# a comment and should be ignored by the parser.
+#
+# Number of nodes
+3
+# Here we list the individual nodes
+#
+# Format is:
+# UID Hostname Port UIDs of Neighbors
+123 127.0.0.1 50000
+5 127.0.0.1 50001
+23 127.0.0.1 50002
+
+# Node#   Neighbors
+5      123 23
+123    5 23
+23     5 123
