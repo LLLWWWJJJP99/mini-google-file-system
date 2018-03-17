@@ -28,9 +28,9 @@ for any number of servers and clients. The file system you are required to emula
 text files in that directory. A file in this file system can be of any size. However, a file is logically divided into chunks,
 with each chunk being at most 8192 bytes (8 kilobytes) in size. Chunks of files in your filesystem are actually stored
 as Linux files on the three servers. All the chunks of a given file need not be on the same server. In essence, a file in
-this filesystem is a concatenation of multiple Linux files. If the total size of a file in this file system is 8 x+ykilobytes,
-wherey < 8 , then the file is made up ofx+ 1chunks, where the firstxchunks are of size 8 kilobytes each, while the
-last chunk is of sizeykilobytes.
+this filesystem is a concatenation of multiple Linux files. If the total size of a file in this file system is 8 x + y kilobytes,
+where y < 8 , then the file is made up of x + 1 chunks, where the first x chunks are of size 8 kilobytes each, while the
+last chunk is of size y kilobytes.
 
 ![alt text](https://github.com/DavidLi210/mini-google-file-system/blob/master/figure1.png)
 
@@ -59,7 +59,7 @@ performs the operations.
 In effect, clients and servers communicate with each other to exchange data, while the clients and servers commu-
 nicate with the M-server to exchange metadata.
 You can assume that the maximize amount of data that can be appended at a time is 2048 bytes. If the current size of
-the last chunk of the file, where the append operation is to be performed, isSsuch that 8192 −S < appended data size
+the last chunk of the file, where the append operation is to be performed, isSsuch that 8192 − S < appended data size
 then the rest of that chunk is padded with a null character, a new chunk is created and the append operation is performed
 there.
 
