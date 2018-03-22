@@ -6,5 +6,8 @@ public interface MsgType {
 	String REPLY = "reply";
 	String REQUEST = "request";
 	String HEARTBEAT = "heartbeat";
-	
+	String CREATE = "create";
+	String APPEND = "append";
+	String READ = "read";
+	String FAILURE = "failure";
 }

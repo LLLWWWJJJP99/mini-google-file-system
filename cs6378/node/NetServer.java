@@ -3,6 +3,7 @@ package cs6378.node;
 import java.io.File;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.io.RandomAccessFile;
 import java.net.ConnectException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -15,8 +16,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
-import cs6378.message.HearbeatMessage;
+import cs6378.message.MetaMessage;
+import cs6378.message.DataMessage;
+import cs6378.message.HeartbeatMessage;
 import cs6378.message.Message;
 import cs6378.message.MsgType;
 import cs6378.util.NodeInfo;
@@ -64,6 +68,7 @@ public class NetServer implements Node {
 	}
 
 	private void init() {
+		System.out.println("My ID is " + id);
 		new Thread(new NodeListener(this, port)).start();
 
 		sendHeartbeatMessage();
@@ -94,19 +99,131 @@ public class NetServer implements Node {
 		for (File file : files) {
 			cal.setTimeInMillis(file.lastModified());
 			String timeString = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(cal.getTime());
-			list.add(new String[] { file.getName(), timeString });
+			list.add(new String[] { file.getName(), timeString, file.length() + "" });
 		}
 		return list;
 	}
 
-	@Override
-	public synchronized void process_Message(Message message) {
-		
+	private synchronized void createFileWithContent(String chuck_name, String content) {
+		File file = new File(FILEPREFIX + chuck_name);
+		RandomAccessFile raf = null;
+		try {
+			if (file.createNewFile()) {
+				raf = new RandomAccessFile(file, "rw");
+				long len = raf.length();
+				raf.seek(len);
+				raf.writeBytes("\n" + content);
+			} else {
+				System.err.println(file.getName() + " File Already Exisits");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (raf != null) {
+				try {
+					raf.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
+	private synchronized void create_file(String chuck_name) {
+		File file = new File(FILEPREFIX + chuck_name);
+		try {
+			if (!file.createNewFile()) {
+				System.err.println(file.getName() + " File Already Exisits");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	// append a line to specific file
+	private void appendLine(File file, String line) {
+		RandomAccessFile raf = null;
+		try {
+			raf = new RandomAccessFile(file, "rw");
+			long len = raf.length();
+			raf.seek(len);
+			raf.writeBytes("\n" + line);
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (raf != null) {
+				try {
+					raf.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
 	}
 
 	@Override
+	public synchronized void process_Message(Message message) {
+		String realClazz = message.getClass().getSimpleName();
+		if (realClazz.equals(MetaMessage.class.getSimpleName())) {
+			MetaMessage mMessage = (MetaMessage) message;
+			if (mMessage.getType().equals(MsgType.CREATE)) {
+				create_file(mMessage.getContent());
+			}
+		} else if (realClazz.equals(DataMessage.class.getSimpleName())) {
+			DataMessage dMessage = (DataMessage) message;
+			if (dMessage.getType().equals(MsgType.APPEND)) {
+				appendLine(new File(FILEPREFIX + dMessage.getFilaName()), dMessage.getContent());
+			} else if (dMessage.getType().equals(MsgType.CREATE)) {
+				createFileWithContent(dMessage.getFilaName(), dMessage.getContent());
+			} else if(dMessage.getType().equals(MsgType.READ)) {
+				String chunk_name = dMessage.getFilaName();
+				String content = randomReadLine(chunk_name, dMessage.getOffset());
+				DataMessage reply = new DataMessage();
+				reply.setClock(dMessage.getClock());
+				reply.setFilaName(chunk_name);
+				reply.setContent(content);
+				reply.setReceiver(dMessage.getSender());
+				reply.setSender(id);
+				reply.setType(MsgType.READ);
+				private_Message(reply);
+			}
+		}
+	}
+	
+	private synchronized String randomReadLine(String chunk_name, long offset) {
+		StringBuffer sb = new StringBuffer();
+		try (RandomAccessFile raf = new RandomAccessFile(FILEPREFIX + chunk_name, "r")) {
+			long end = ThreadLocalRandom.current().nextLong(offset, raf.length());
+			int len = (int) (end - offset);
+			byte[] bytes = new byte[len];
+			raf.readFully(bytes);
+			sb.append(new String(bytes));
+			
+		} catch (Exception e) {
+			
+		}
+		return sb.toString();
+	}
+	
+	public synchronized void private_Message(DataMessage message) {
+		String addr = nodeLookup.getIP(message.getReceiver());
+		int port = Integer.parseInt(nodeLookup.getPort(message.getReceiver()));
+		try {
+			Socket socket = new Socket(addr, port);
+			ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+			oos.writeObject(message);
+			oos.close();
+			socket.close();
+		} catch (ConnectException e) {
+			System.out.println("Please Wait For Other Nodes To Be Started");
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Override
 	public synchronized void private_Message(int receiver, String type) {
-		
+
 		String addr = nodeLookup.getIP(receiver);
 		int port = Integer.parseInt(nodeLookup.getPort(receiver));
 		try {
@@ -114,7 +231,7 @@ public class NetServer implements Node {
 			ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
 			if (type.equals(MsgType.HEARTBEAT)) {
 				List<String[]> fileList = enquiryFiles();
-				HearbeatMessage message = new HearbeatMessage();
+				HeartbeatMessage message = new HeartbeatMessage();
 				message.setInfos(fileList);
 				message.setSender(id);
 				message.setReceiver(receiver);
@@ -129,7 +246,6 @@ public class NetServer implements Node {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-
 	}
 
 	public static void main(String[] args) {
@@ -139,5 +255,10 @@ public class NetServer implements Node {
 		}
 		NetServer server = new NetServer(args[0]);
 		server.init();
+
+		// System.out.println(server.clientNeighbors);
+		// System.out.println(server.serverNeighbors);
+		// System.out.println(server.mserverID);
+		// server.create_file("1234");
 	}
 }

@@ -32,6 +32,7 @@ public class NodeListener implements Runnable {
 				accept.close();
 			}
 		} catch (IOException | ClassNotFoundException e) {
+			System.err.println(node.getClass().getSimpleName());
 			e.printStackTrace();
 		}
 	}

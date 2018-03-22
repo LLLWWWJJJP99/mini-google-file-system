@@ -46,7 +46,7 @@ public class Ricart_Agrawala_Algorithm {
 		outstanding_reply_count = n;
 	}
 	
-	public List<Integer> getDefered_reply() {
+	public synchronized List<Integer> getDefered_reply() {
 		return defered_reply;
 	}
 
