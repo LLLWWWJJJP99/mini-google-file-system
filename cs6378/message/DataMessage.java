@@ -2,6 +2,10 @@ package cs6378.message;
 
 import java.io.Serializable;
 
+/**
+ * @author 29648
+ * message transfered between server and clients
+ */
 public class DataMessage extends Message implements Serializable {
 	private static final long serialVersionUID = 1753984007018495742L;
 	private long offset;

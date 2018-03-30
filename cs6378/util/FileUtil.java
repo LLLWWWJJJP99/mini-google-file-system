@@ -9,6 +9,10 @@ import java.util.Scanner;
 
 public class FileUtil {
 	public static final String FILE_ADDR = "fileinfo.txt";
+	/**
+	 * read the config file and store the information about how a file corresponds to its chunks
+	 * @return hashmap about file to chunks info
+	 */
 	public static HashMap<String, List<String>> readFileConfig() {
 		HashMap<String, List<String>> file_to_chunks = new HashMap<>();
 		try(Scanner scanner = new Scanner(new FileInputStream(FILE_ADDR))){

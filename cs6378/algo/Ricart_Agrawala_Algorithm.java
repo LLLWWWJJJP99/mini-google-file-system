@@ -6,6 +6,10 @@ import java.util.List;
 
 import cs6378.message.Message;
 
+/**
+ * @author 29648
+ * Ricart_Agrawala_Algorithm used to choose a ndoe to enter critical section
+ */
 public class Ricart_Agrawala_Algorithm {
 	private boolean reques_critical_section;
 	private int our_request_clock;
@@ -21,7 +25,7 @@ public class Ricart_Agrawala_Algorithm {
 	public void setOutstanding_reply_count(int outstanding_reply_count) {
 		this.outstanding_reply_count = outstanding_reply_count;
 	}
-
+	// whether this node has made a request for critical section
 	public boolean isReques_critical_section() {
 		return reques_critical_section;
 	}
@@ -50,10 +54,18 @@ public class Ricart_Agrawala_Algorithm {
 		return defered_reply;
 	}
 
+	/**
+	 * increase its lamport clock
+	 */
 	public synchronized void local_event() {
 		clock.local_Event();
 	}
 	
+	/**
+	 * if this node has made request for cs and has received all replies from other nodes then return true
+	 * and it enter cs
+	 * @return
+	 */
 	public synchronized boolean check_critical_section() {
 		return outstanding_reply_count == 0 && reques_critical_section;
 	}
@@ -66,11 +78,19 @@ public class Ricart_Agrawala_Algorithm {
 		return clock.getClock();
 	}
 
+	/**
+	 * receive a reply from a neighbor, then update lamport
+	 * @param message
+	 */
 	public synchronized void process_reply(Message message) {
 		clock.msg_event(message);
 		outstanding_reply_count--;
 	}
 	
+	/**check whether we need to defer the request message return true if we need otherwise false
+	 * @param message request message
+	 * @return
+	 */
 	public synchronized boolean process_request(Message message) {
 		clock.msg_event(message);
 		if(reques_critical_section && (our_request_clock < message.getClock() || 

@@ -38,9 +38,11 @@ public class NetClient implements Node {
 		this.serverNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.nodeLookup = new NodeLookup();
+		// read nodes' ip port from config file
 		NodeInfo info = NodeUtil.readConfig(FILEADDR, nodeLookup.getId_to_addr(), nodeLookup.getId_to_index());
 		Map<Integer, String> typeInfos = info.getNodeInfos();
 		for (Map.Entry<Integer, String> entry : typeInfos.entrySet()) {
+			// set ip neighbors according to their type
 			int nodeid = entry.getKey();
 			String type = entry.getValue();
 			if (type.equals("server")) {
@@ -74,7 +76,8 @@ public class NetClient implements Node {
 		login_nodes = Collections.synchronizedSet(new HashSet<>());
 
 		new Thread(new NodeListener(this, port)).start();
-
+		// broadcast login message until all neighbor inform me that they know I have
+		// loged in
 		while (!login_nodes.equals(clientNeighbors)) {
 			broadcast(MsgType.LOGIN);
 			try {
@@ -87,6 +90,12 @@ public class NetClient implements Node {
 		System.out.println(this.id + " sets up finely");
 	}
 
+	/**
+	 * broadcast a type of message
+	 * 
+	 * @param type
+	 *            of message to be broadcasted
+	 */
 	public synchronized void broadcast(String type) {
 		if (type.equals(MsgType.REQUEST)) {
 			algorithm.setOutstanding_reply_count(clientNeighbors.size());
@@ -98,7 +107,8 @@ public class NetClient implements Node {
 		}
 	}
 
-	public synchronized void private_Message(DataMessage message) {
+	@Override
+	public synchronized void private_Message(Message message) {
 		String addr = nodeLookup.getIP(message.getReceiver());
 		int port = Integer.parseInt(nodeLookup.getPort(message.getReceiver()));
 		try {
@@ -125,6 +135,7 @@ public class NetClient implements Node {
 		try {
 			Socket socket = new Socket(addr, port);
 			ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+			// send message for critical selection
 			if (type.equals(MsgType.REQUEST) || type.equals(MsgType.REPLY) || type.equals(MsgType.LOGIN)
 					|| type.equals(MsgType.LOGIN_SUCCESS)) {
 				Message message = new Message();
@@ -133,6 +144,7 @@ public class NetClient implements Node {
 				message.setType(type);
 				message.setClock(algorithm.getClock());
 				oos.writeObject(message);
+				// send message for file operations
 			} else if (type.equals(MsgType.CREATE) || type.equals(MsgType.READ) || type.equals(MsgType.APPEND)) {
 				MetaMessage message = new MetaMessage();
 				message.setReceiver(receiver);
@@ -152,15 +164,25 @@ public class NetClient implements Node {
 		}
 	}
 
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see cs6378.node.Node#process_Message(cs6378.message.Message)
+	 */
 	@Override
 	public synchronized void process_Message(Message message) {
 		String realClazz = message.getClass().getSimpleName();
+		// receive message for critical selection and login
 		if (realClazz.equals(Message.class.getSimpleName())) {
 			System.out.println(id + " receives message " + message);
 			if (message.getType().equals(MsgType.LOGIN)) {
 				System.out.println(message.getSender() + " login to " + message.getReceiver());
+				// one neighbor tells me he/she login, then I send message to tell me I have
+				// already received
+				// your message
 				private_Message(message.getSender(), MsgType.LOGIN_SUCCESS);
 			} else if (message.getType().equals(MsgType.LOGIN_SUCCESS)) {
+				// one neighbor know I login
 				login_nodes.add(message.getSender());
 			} else if (message.getType().equals(MsgType.REPLY)) {
 				algorithm.process_reply(message);
@@ -172,14 +194,15 @@ public class NetClient implements Node {
 					System.err.println("My req time: " + algorithm.getOur_request_clock());
 				}
 			}
+			// receive message for file operation
 		} else if (realClazz.equals(MetaMessage.class.getSimpleName())) {
 			MetaMessage real = (MetaMessage) message;
 			if (real.getType().equals(MsgType.FAILURE)) {
 				String[] failureInfo = real.getContent().split("\\s+");
 				System.err.println(
 						failureInfo[1] + " is already dead, your " + failureInfo[0] + " fails at " + real.getClock());
-			} else if(real.getType().equals(MsgType.READ)) {
-				
+			} else if (real.getType().equals(MsgType.READ)) {
+				// receive read message from meta server
 				String[] chunk_infos = real.getContent().split("\\*");
 				int send_to_server = Integer.parseInt(chunk_infos[1].trim());
 				DataMessage dMessage = new DataMessage();
@@ -192,6 +215,8 @@ public class NetClient implements Node {
 				dMessage.setType(MsgType.READ);
 				private_Message(dMessage);
 			} else {
+				// receive read message from meta server which contains create or append content
+				// and offset and chosen server
 				String content = real.getContent();
 				String[] strs = content.split("\\*");
 				DataMessage dMessage = new DataMessage();
@@ -202,19 +227,22 @@ public class NetClient implements Node {
 				dMessage.setOffset(-1);
 				dMessage.setReceiver(chosen_server);
 				dMessage.setSender(id);
-
+				// meta server tell client to create new chucnk and append line here
 				if (real.getType().equals(MsgType.CREATE)) {
 					dMessage.setType(MsgType.CREATE);
 					private_Message(dMessage);
+					// meta server tell client to append line here to specified chunk
 				} else if (real.getType().equals(MsgType.APPEND)) {
 					dMessage.setType(MsgType.APPEND);
 					private_Message(dMessage);
 				}
 			}
+			// server send read data to this client
 		} else if (realClazz.equals(DataMessage.class.getSimpleName())) {
 			DataMessage dMessage = (DataMessage) message;
-			if(dMessage.getType().equals(MsgType.READ)) {
-				System.out.println(id + " reads " + dMessage.getContent() + " from " + dMessage.getFilaName() + " at " + dMessage.getSender());
+			if (dMessage.getType().equals(MsgType.READ)) {
+				System.out.println(id + " reads " + dMessage.getContent() + " from " + dMessage.getFilaName() + " at "
+						+ dMessage.getSender());
 			}
 		}
 	}
@@ -235,6 +263,7 @@ public class NetClient implements Node {
 
 			algorithm.setReques_critical_section(true);
 			broadcast(MsgType.REQUEST);
+			// keep checking whether is could enter cs
 			while (!algorithm.check_critical_section()) {
 				try {
 					Thread.sleep(50);
@@ -255,21 +284,21 @@ public class NetClient implements Node {
 			algorithm.setReques_critical_section(false);
 			System.out.println(id + " exits cs ");
 			times++;
-			
-			int waitTime = 20;
-			
-			while(waitTime > 0) {
+
+			int waitTime = 10;
+			// rest 10s to make next request
+			while (waitTime > 0) {
 				try {
 					Thread.sleep(1000);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
 				waitTime--;
-				if(waitTime == 10) {
+				if (waitTime == 10) {
 					System.err.println("Wait for 10 seconds to make next request");
-				}else if(waitTime == 5) {
+				} else if (waitTime == 5) {
 					System.err.println("Wait for 5 seconds to make next request");
-				}else if(waitTime == 15) {
+				} else if (waitTime == 15) {
 					System.err.println("Wait for 15 seconds to make next request");
 				}
 			}
@@ -277,14 +306,17 @@ public class NetClient implements Node {
 		System.out.println("I am Done");
 	}
 
+	/**
+	 * clients enter_critical_section and randomly choose one operation
+	 */
 	private void enter_critical_section() {
 		Random rand = new Random();
-		int choice = rand.nextInt(5);
-		if (choice >= 2) {
-			private_Message(mserverID, MsgType.READ);
-		} else if (choice == 1) {
-			private_Message(mserverID, MsgType.READ);
-		} else if (choice == 0) {
+		int choice = rand.nextInt(6);
+		if (choice >= 4) {
+			private_Message(mserverID, MsgType.APPEND);
+		} else if (choice > 1 && choice < 4) {
+			private_Message(mserverID, MsgType.CREATE);
+		} else if (choice <= 1) {
 			private_Message(mserverID, MsgType.READ);
 		}
 	}

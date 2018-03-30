@@ -7,6 +7,10 @@ import java.net.Socket;
 
 import cs6378.message.Message;
 
+/**
+ * @author 29648
+ * listener used to receive message
+ */
 public class NodeListener implements Runnable {
 	
 	private Node node;
@@ -19,7 +23,7 @@ public class NodeListener implements Runnable {
 	public static void main(String[] args) {
 
 	}
-
+	
 	@Override
 	public void run() {
 		try (ServerSocket server = new ServerSocket(myPort);) {

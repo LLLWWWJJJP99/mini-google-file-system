@@ -2,6 +2,10 @@ package cs6378.message;
 
 import java.io.Serializable;
 
+/**
+ * @author 29648
+ * message transfered bewteen clients and meta server
+ */
 public class MetaMessage extends Message implements Serializable {
 
 	/**

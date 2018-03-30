@@ -10,6 +10,9 @@ public class LamportClock {
 		this.d = d;
 	}
 
+	/**
+	 * tick local clock before sending or receiving a message
+	 */
 	public synchronized void local_Event() {
 		this.clock += d;
 	}
@@ -22,6 +25,10 @@ public class LamportClock {
 		return d;
 	}
 
+	/**
+	 * update local clock according to received message
+	 * @param message
+	 */
 	public synchronized void msg_event(Message message) {
 		this.clock += d;
 		if (message.getClock() + d > this.clock) {

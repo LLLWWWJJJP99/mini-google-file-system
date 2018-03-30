@@ -44,9 +44,11 @@ public class NetServer implements Node {
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.serverNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.nodeLookup = new NodeLookup();
+		// read nodes' ip port from config file
 		NodeInfo info = NodeUtil.readConfig(FILEADDR, nodeLookup.getId_to_addr(), nodeLookup.getId_to_index());
 		Map<Integer, String> typeInfos = info.getNodeInfos();
 		for (Map.Entry<Integer, String> entry : typeInfos.entrySet()) {
+			// set ip neighbors according to their type
 			int nodeid = entry.getKey();
 			String type = entry.getValue();
 			if (this.id != nodeid && type.equals("server")) {
@@ -69,8 +71,9 @@ public class NetServer implements Node {
 
 	private void init() {
 		System.out.println("My ID is " + id);
+		// start to receive messages
 		new Thread(new NodeListener(this, port)).start();
-
+		// start to send heartbeat message
 		sendHeartbeatMessage();
 	}
 
@@ -104,6 +107,11 @@ public class NetServer implements Node {
 		return list;
 	}
 
+	/**
+	 * create a new chunk and append the content into it
+	 * @param chuck_name chosen new chunk name
+	 * @param content content to be appended to the new chunk
+	 */
 	private synchronized void createFileWithContent(String chuck_name, String content) {
 		File file = new File(FILEPREFIX + chuck_name);
 		RandomAccessFile raf = null;
@@ -129,6 +137,10 @@ public class NetServer implements Node {
 		}
 	}
 
+	/**
+	 * create an empty new chunk
+	 * @param chuck_name
+	 */
 	private synchronized void create_file(String chuck_name) {
 		File file = new File(FILEPREFIX + chuck_name);
 		try {
@@ -164,17 +176,22 @@ public class NetServer implements Node {
 	@Override
 	public synchronized void process_Message(Message message) {
 		String realClazz = message.getClass().getSimpleName();
+		// meta server tells server to create a new chunk directly
 		if (realClazz.equals(MetaMessage.class.getSimpleName())) {
 			MetaMessage mMessage = (MetaMessage) message;
 			if (mMessage.getType().equals(MsgType.CREATE)) {
 				create_file(mMessage.getContent());
 			}
+		// client send message to server
 		} else if (realClazz.equals(DataMessage.class.getSimpleName())) {
 			DataMessage dMessage = (DataMessage) message;
+			// append a new line to chosen file
 			if (dMessage.getType().equals(MsgType.APPEND)) {
 				appendLine(new File(FILEPREFIX + dMessage.getFilaName()), dMessage.getContent());
+			// create a new chunk and insert content
 			} else if (dMessage.getType().equals(MsgType.CREATE)) {
 				createFileWithContent(dMessage.getFilaName(), dMessage.getContent());
+			// read from chosen chunk starting at offset
 			} else if(dMessage.getType().equals(MsgType.READ)) {
 				String chunk_name = dMessage.getFilaName();
 				String content = randomReadLine(chunk_name, dMessage.getOffset());
@@ -190,6 +207,12 @@ public class NetServer implements Node {
 		}
 	}
 	
+	/**
+	 * read lines fron chosen file starting at given offset
+	 * @param chunk_name
+	 * @param offset to start reading
+	 * @return
+	 */
 	private synchronized String randomReadLine(String chunk_name, long offset) {
 		StringBuffer sb = new StringBuffer();
 		try (RandomAccessFile raf = new RandomAccessFile(FILEPREFIX + chunk_name, "r")) {
@@ -205,7 +228,8 @@ public class NetServer implements Node {
 		return sb.toString();
 	}
 	
-	public synchronized void private_Message(DataMessage message) {
+	@Override
+	public synchronized void private_Message(Message message) {
 		String addr = nodeLookup.getIP(message.getReceiver());
 		int port = Integer.parseInt(nodeLookup.getPort(message.getReceiver()));
 		try {

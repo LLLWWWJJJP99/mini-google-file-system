@@ -2,16 +2,11 @@
 
 ## Instructor: Ravi Prakash
 
-## Assigned on: March 12, 2018
-
-## Due date and time: April 2, 2018, 11:59 pm
-
-This is an individual project and you are required to demonstrate its operation to the instructor and/or the TA to
-get credit for the project.
+## Mini Google File System
 
 ## 1 Requirements
 
-1. Source code must be in the C /C++ /Java programming language.
+1. Source code is in Java programming language.
 2. The program must run on UTD lab machines (dc01, dc02, ..., dc45).
 
 ## 2 Client-Server Model
@@ -73,15 +68,16 @@ there.
 3. When a failed server recovers, it should resume sending its heartbeat messages, and the M-server which should
     repopulate its metadata to indicate the availability fo the recovered server’s chunks.
 
-## 5 Submission Information
+## 5 How to run it
 
-The submission should be through eLearning in the form of an archive consisting of:
-
-1. File(s) containing the source code.
-2. The README file, which describes how to run your program.
+1. one file like config.txt to tells the ip and port for each node and each node's type
+2. one file like fileinfo.txt to tells metaserver which chunk corresponds to which server ( on which server)
+3. use java -jar gclient.jar clientid(you should jot it down in config.txt) to start a client
+4. use java -jar gserver.jar serverid(you should jot it down in config.txt) to start a server
+5. use java -jar gmserver.jar (you should jot it down in config.txt) to start a metaserver
 
 ```
-DO NOT submit unnecessary files.
+You should set up file directories like the one i provide here. files+serverid eg: files1, files2... Feel free to contact me to get more details about how to run the project. My Email:wxl163530@gmail.com
 ```
 
 
