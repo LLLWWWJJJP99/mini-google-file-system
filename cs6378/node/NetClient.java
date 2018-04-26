@@ -200,7 +200,7 @@ public class NetClient implements Node {
 			if (real.getType().equals(MsgType.FAILURE)) {
 				String[] failureInfo = real.getContent().split("\\s+");
 				System.err.println(
-						failureInfo[1] + " is already dead, your " + failureInfo[0] + " fails at " + real.getClock());
+						failureInfo[1] + " is not available, your " + failureInfo[0] + " fails at " + real.getClock());
 			} else if (real.getType().equals(MsgType.READ)) {
 				// receive read message from meta server
 				String[] chunk_infos = real.getContent().split("\\*");
@@ -313,11 +313,11 @@ public class NetClient implements Node {
 		Random rand = new Random();
 		int choice = rand.nextInt(6);
 		if (choice >= 4) {
-			private_Message(mserverID, MsgType.CREATE, null);
+			private_Message(mserverID, MsgType.READ, null);
 		} else if (choice > 1 && choice < 4) {
-			private_Message(mserverID, MsgType.CREATE, null);
+			private_Message(mserverID, MsgType.READ, null);
 		} else if (choice <= 1) {
-			private_Message(mserverID, MsgType.CREATE, null);
+			private_Message(mserverID, MsgType.READ, null);
 		}
 	}
 

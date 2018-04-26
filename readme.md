@@ -1,4 +1,4 @@
-# CS/CE/TE 6378: Project II
+# CS/CE/TE 6378: Project II + Project III
 
 ## Instructor: Ravi Prakash
 
@@ -46,6 +46,7 @@ of last mapping update. Every 5 seconds, the servers send heartbeat messages to 
 files they store. The M-server uses these heartbeat messages to populate/update the metadata.
 If the M-server does not receive a heartbeat message from a server for 15 seconds, the M-server assumes that the
 server is down and none of its chunks is available.
+
 Clients wishing to create a file, read or append to a file in your file system send their request (with the name of
 the file) to the M-server. If a new file is to be created, the M-server randomly asks one of the servers to create the
 first chunk of the file, and adds an entry for that file in its directory. For read and append operations, based on the file

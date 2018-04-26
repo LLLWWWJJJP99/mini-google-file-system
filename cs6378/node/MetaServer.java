@@ -30,7 +30,7 @@ import cs6378.util.NodeUtil;
 
 public class MetaServer implements Node {
 	private Map<String, List<String>> file_to_chunks;
-	private Map<String, Integer> chunk_to_server;
+	private Map<String, Integer> replica_to_server;
 	private Map<String, String> chunk_lasttime_updated;
 	private Map<Integer, Boolean> serverNeighbors;
 	private Map<Integer, Long> servers_lasttime_heartbeat;
@@ -49,7 +49,7 @@ public class MetaServer implements Node {
 		this.serverNeighbors = Collections.synchronizedMap(new HashMap<>());
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.servers_lasttime_heartbeat = Collections.synchronizedMap(new HashMap<>());
-		this.chunk_to_server = Collections.synchronizedMap(new HashMap<>());
+		this.replica_to_server = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_lasttime_updated = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_to_replica = Collections.synchronizedMap(new HashMap<>());
 		this.nodeLookup = new NodeLookup();
@@ -125,7 +125,7 @@ public class MetaServer implements Node {
 			servers_lasttime_heartbeat.put(hMessage.getSender(), System.currentTimeMillis() / 1000);
 			List<String[]> chunk_server_info = hMessage.getInfos();
 			for (String[] info : chunk_server_info) {
-				chunk_to_server.put(info[0], hMessage.getSender());
+				replica_to_server.put(info[0], hMessage.getSender());
 				chunk_lasttime_updated.put(info[0], info[1]);
 				chunk_size.put(info[0], Long.parseLong(info[2].trim()));
 			}
@@ -133,122 +133,125 @@ public class MetaServer implements Node {
 		} else if (realClazz.equals(MetaMessage.class.getSimpleName())) {
 			MetaMessage dMessage = (MetaMessage) message;
 			System.out.println("DMessage: " + dMessage);
-			Integer chosen_server = choose_server();
+			// Integer chosen_server = choose_server();
 			// check if chosen server is dead then return failure message
-			if (!MsgType.CREATE.equals(dMessage.getType()) && is_server_dead(chosen_server)) {
-				System.err.println("Chosen server " + chosen_server + " is dead ");
-				MetaMessage failure = new MetaMessage();
-				failure.setOffset(-1);
-				failure.setContent(dMessage.getType() + " " + chosen_server);
-				failure.setClock(dMessage.getClock());
-				failure.setReceiver(dMessage.getSender());
-				failure.setSender(id);
-				failure.setType(MsgType.FAILURE);
-				private_Message(failure);
-			} else {
-				// send create message to chosen server
-				if (dMessage.getType().equals(MsgType.CREATE)) {
-					// private_Message(chosen_server, MsgType.CREATE);
-					Integer[] chosen_servers = choose_three_servers();
-					
-					boolean all_dead = true;
+
+			// send create message to chosen server
+			if (dMessage.getType().equals(MsgType.CREATE)) {
+				// private_Message(chosen_server, MsgType.CREATE);
+				Integer[] chosen_servers = choose_three_servers();
+
+				boolean all_dead = true;
+				for (Integer server : chosen_servers) {
+					all_dead &= is_server_dead(server);
+				}
+
+				if (!all_dead) {
+					String chunk_name = UUID.randomUUID().toString();
 					for (Integer server : chosen_servers) {
-						all_dead &= is_server_dead(server);
-					}
-
-					if (!all_dead) {
-						String chunk_name = UUID.randomUUID().toString();
-						for (Integer server : chosen_servers) {
-							if(serverNeighbors.get(server)) {
-								private_Message(server, MsgType.CREATE, chunk_name);
-							}
+						if (serverNeighbors.get(server)) {
+							private_Message(server, MsgType.CREATE, chunk_name);
 						}
-						filename++;
-					} else {
-						System.err.println("Chosen servers all are dead ");
-						MetaMessage failure = new MetaMessage();
-						failure.setOffset(-1);
-						failure.setContent(dMessage.getType() + " Chosen servers all are dead ");
-						failure.setClock(dMessage.getClock());
-						failure.setReceiver(dMessage.getSender());
-						failure.setSender(id);
-						failure.setType(MsgType.FAILURE);
-						private_Message(failure);
 					}
-					System.out.println("<========================================>");
-					for(Map.Entry<String, String[]> entry : chunk_to_replica.entrySet()) {
-						String[] replicas = entry.getValue();
-						String chunk = entry.getKey();
-						String part2 = String.join(",", replicas);
-						System.out.println(chunk + " || " + part2);
+					filename++;
+				} else {
+					System.err.println("Chosen servers all are dead ");
+					send_failure(dMessage, "CREATE_OPS");
+				}
+				System.out.println("<========================================>");
+				for (Map.Entry<String, String[]> entry : chunk_to_replica.entrySet()) {
+					String[] replicas = entry.getValue();
+					String chunk = entry.getKey();
+					String part2 = String.join(",", replicas);
+					System.out.println(chunk + " || " + part2);
+				}
+				System.out.println("<========================================>");
+				// send append message to chosen server
+			} else if (dMessage.getType().equals(MsgType.APPEND)) {
+				// randomly choose a file and check whether its last chunk has enough to insert
+				// new lines
+				List<String> file_list = new ArrayList<>(file_to_chunks.keySet());
+				// System.out.println("file_list: " + file_list);
+				Random rand = new Random();
+				String chosen_file = file_list.get(rand.nextInt(file_list.size()));
+				List<String> chunks = file_to_chunks.get(chosen_file);
+
+				// System.out.println("chosen_file: " + chosen_file);
+				// System.out.println("chunks: " + chunks);
+
+				String chosen_chunk = chunks.get(chunks.size() - 1);
+
+				int choice = rand.nextInt(10);
+				String content = "\n_Add_New_Line_at_" + dMessage.getClock();
+				// randomly generate new lines
+				if (choice >= 6) {
+					byte[] bytes = new byte[2048];
+					Arrays.fill(bytes, (byte) 1);
+					content = new String(bytes);
+				}
+				// System.out.println("chosen_chunk: " + chosen_chunk);
+				// System.out.println("chunk_size: " + chunk_size);
+				long chosen_chunk_size = chunk_size.get(chosen_chunk);
+				MetaMessage reply = new MetaMessage();
+				reply.setOffset(-1);
+				reply.setClock(dMessage.getClock());
+				reply.setReceiver(dMessage.getSender());
+				reply.setSender(id);
+				long content_size = content.getBytes().length;
+				// if new lines exceed last chunk's size limit then tell client to create a new
+				// chunk on chosen server
+				if (8192l - chosen_chunk_size < content_size) {
+					String new_replica_name = UUID.randomUUID().toString();
+					reply.setType(MsgType.CREATE);
+					// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+					// reply.setContent(content + "*" + new_replica_name + "*" + chosen_server);
+					// ????????????????????????????????????????????????????????????????????????????????
+					// updateChunkInfo(chosen_file, new_replica_name, chosen_server,
+					// chosen_chunk_size, chosen_chunk);
+
+				} else {
+					// otherwise go last chunk 's corresponding server and append new lines
+					reply.setType(MsgType.APPEND);
+					int corresponding_server = replica_to_server.get(chosen_chunk);
+					reply.setContent(content + "*" + chosen_chunk + "*" + corresponding_server);
+				}
+				private_Message(reply);
+				// receive a new read message from client
+			} else if (MsgType.READ.equals(dMessage.getType())) {
+				List<String> file_list = new ArrayList<>(file_to_chunks.keySet());
+				// System.out.println("file_list: " + file_list);
+				Random rand = new Random();
+				String chosen_file = file_list.get(rand.nextInt(file_list.size()));
+				List<String> chunks = file_to_chunks.get(chosen_file);
+
+				// System.out.println("chosen_file: " + chosen_file);
+				// System.out.println("chunks: " + chunks);
+				// randomly choose a offset for the read operations
+				String chosen_chunk = chunks.get(rand.nextInt(chunks.size()));
+				boolean all_dead = true;
+				String chosen_replica = null;
+				String[] chosen_replicas = chunk_to_replica.get(chosen_chunk);
+				for(String replica : chosen_replicas) {
+					Integer corresponding_server = replica_to_server.get(replica);
+					if(serverNeighbors.get(corresponding_server)) {
+						all_dead = false;
+						chosen_replica = replica;
+						break;
 					}
-					System.out.println("<========================================>");
-					// send append message to chosen server
-				} else if (dMessage.getType().equals(MsgType.APPEND)) {
-					// randomly choose a file and check whether its last chunk has enough to insert
-					// new lines
-					List<String> file_list = new ArrayList<>(file_to_chunks.keySet());
-					// System.out.println("file_list: " + file_list);
-					Random rand = new Random();
-					String chosen_file = file_list.get(rand.nextInt(file_list.size()));
-					List<String> chunks = file_to_chunks.get(chosen_file);
-
-					// System.out.println("chosen_file: " + chosen_file);
-					// System.out.println("chunks: " + chunks);
-
-					String chosen_chunk = chunks.get(chunks.size() - 1);
-
-					int choice = rand.nextInt(10);
-					String content = "\n_Add_New_Line_at_" + dMessage.getClock();
-					// randomly generate new lines
-					if (choice >= 6) {
-						byte[] bytes = new byte[2048];
-						Arrays.fill(bytes, (byte) 1);
-						content = new String(bytes);
-					}
-					// System.out.println("chosen_chunk: " + chosen_chunk);
-					// System.out.println("chunk_size: " + chunk_size);
-					long chosen_chunk_size = chunk_size.get(chosen_chunk);
-					MetaMessage reply = new MetaMessage();
-					reply.setOffset(-1);
-					reply.setClock(dMessage.getClock());
-					reply.setReceiver(dMessage.getSender());
-					reply.setSender(id);
-					long content_size = content.getBytes().length;
-					// if new lines exceed last chunk's size limit then tell client to create a new
-					// chunk on chosen server
-					if (8192l - chosen_chunk_size < content_size) {
-						String new_replica_name = UUID.randomUUID().toString();
-						reply.setType(MsgType.CREATE);
-						reply.setContent(content + "*" + new_replica_name + "*" + chosen_server);
-						//????????????????????????????????????????????????????????????????????????????????
-						// updateChunkInfo(chosen_file, new_replica_name, chosen_server, chosen_chunk_size, chosen_chunk);
-
-					} else {
-						// otherwise go last chunk 's corresponding server and append new lines
-						reply.setType(MsgType.APPEND);
-						int corresponding_server = chunk_to_server.get(chosen_chunk);
-						reply.setContent(content + "*" + chosen_chunk + "*" + corresponding_server);
-					}
-					private_Message(reply);
-					// receive a new read message from client
-				} else if (MsgType.READ.equals(dMessage.getType())) {
-					List<String> file_list = new ArrayList<>(file_to_chunks.keySet());
-					// System.out.println("file_list: " + file_list);
-					Random rand = new Random();
-					String chosen_file = file_list.get(rand.nextInt(file_list.size()));
-					List<String> chunks = file_to_chunks.get(chosen_file);
-
-					// System.out.println("chosen_file: " + chosen_file);
-					// System.out.println("chunks: " + chunks);
-					// randomly choose a offset for the read operations
-					String chosen_chunk = chunks.get(rand.nextInt(chunks.size()));
-					int chunk_server = chunk_to_server.get(chosen_chunk);
-					long limit = chunk_size.get(chosen_chunk);
+				}
+				
+				if(all_dead){
+					System.err.println(" Meta Server found all file server die");
+					send_failure(dMessage, chosen_chunk);
+					
+				}else {
+					int replic_server = replica_to_server.get(chosen_replica);
+					long limit = chunk_size.get(chosen_replica);
 					long offset = limit == 0 ? 0l : ThreadLocalRandom.current().nextLong(limit);
+					System.out.println("file size " + limit + " , offset " + offset);
 					MetaMessage reply = new MetaMessage();
 					reply.setClock(dMessage.getClock());
-					reply.setContent(chosen_chunk + "*" + chunk_server);
+					reply.setContent(chosen_replica + "*" + replic_server);
 					reply.setOffset(offset);
 					reply.setReceiver(dMessage.getSender());
 					reply.setSender(id);
@@ -263,12 +266,24 @@ public class MetaServer implements Node {
 		return (chosen_server == null || !serverNeighbors.get(chosen_server));
 	}
 
+	private synchronized void send_failure(MetaMessage dMessage, String chosen_chunk) {
+		MetaMessage failure = new MetaMessage();
+		failure.setOffset(-1);
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		failure.setContent(dMessage.getType() + " " + chosen_chunk);
+		failure.setClock(dMessage.getClock());
+		failure.setReceiver(dMessage.getSender());
+		failure.setSender(id);
+		failure.setType(MsgType.FAILURE);
+		private_Message(failure);
+	}
+
 	private synchronized Integer[] choose_three_servers() {
 		Integer[] chosen_servers = new Integer[3];
 		int index = 0;
 		List<Integer> list = new ArrayList<>(serverNeighbors.keySet());
 		Random random = new Random();
-		while(index < 3) {
+		while (index < 3) {
 			int rand = random.nextInt(list.size());
 			Integer num = list.remove(rand);
 			chosen_servers[index] = num;
@@ -282,7 +297,7 @@ public class MetaServer implements Node {
 	 * 
 	 * @return server id
 	 */
-	private synchronized Integer choose_server() {
+	private synchronized Integer choose_chunk() {
 		Random random = new Random();
 		List<Integer> servers = new ArrayList<>(serverNeighbors.keySet());
 
@@ -331,7 +346,8 @@ public class MetaServer implements Node {
 					message.setReceiver(receiver);
 					message.setType(MsgType.CREATE);
 					oos.writeObject(message);
-					System.out.println("Meta Server Wants to Create " + file_name + " - " + chunk_name + " - " + replica_name);
+					System.out.println(
+							"Meta Server Wants to Create " + file_name + " - " + chunk_name + " - " + replica_name);
 				} else {
 					System.err.println("While Transfering the Create Message, Server " + receiver + " dies");
 				}
@@ -354,13 +370,14 @@ public class MetaServer implements Node {
 	 * @param chunksize
 	 * @param chunk_name
 	 */
-	private synchronized void updateChunkInfo(String file_name, String replica_name, int receiver, long chunksize, String chunk_name) {
+	private synchronized void updateChunkInfo(String file_name, String replica_name, int receiver, long chunksize,
+			String chunk_name) {
 		file_to_chunks.get(file_name).add(chunk_name);
-		chunk_to_server.put(replica_name, receiver);
+		replica_to_server.put(replica_name, receiver);
 		chunk_to_replica.putIfAbsent(chunk_name, new String[3]);
 		String[] replicas = chunk_to_replica.get(chunk_name);
-		for(int i = 0; i < replicas.length; i++) {
-			if(replicas[i] == null || replicas[i].equals("")) {
+		for (int i = 0; i < replicas.length; i++) {
+			if (replicas[i] == null || replicas[i].equals("")) {
 				replicas[i] = replica_name;
 				break;
 			}
@@ -371,11 +388,11 @@ public class MetaServer implements Node {
 		chunk_lasttime_updated.put(chunk_name, timeString);
 		chunk_size.put(chunk_name, chunksize);
 	}
-	
+
 	public static void main(String[] args) {
 		MetaServer server = new MetaServer();
 		server.init();
-		
+
 		/*
 		 * DataMessage message = new DataMessage(); message.setClock(-1);
 		 * message.setContent("null"); message.setOffset(1); message.setReceiver(3);

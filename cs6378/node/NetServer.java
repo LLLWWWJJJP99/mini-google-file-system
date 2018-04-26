@@ -195,6 +195,7 @@ public class NetServer implements Node {
 			} else if(dMessage.getType().equals(MsgType.READ)) {
 				String chunk_name = dMessage.getFilaName();
 				String content = randomReadLine(chunk_name, dMessage.getOffset());
+				System.out.println("content: " + content);
 				DataMessage reply = new DataMessage();
 				reply.setClock(dMessage.getClock());
 				reply.setFilaName(chunk_name);
@@ -223,7 +224,7 @@ public class NetServer implements Node {
 			sb.append(new String(bytes));
 			
 		} catch (Exception e) {
-			
+			e.printStackTrace();
 		}
 		return sb.toString();
 	}
