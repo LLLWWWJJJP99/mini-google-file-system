@@ -40,6 +40,7 @@ S 3 with local file nameDEF, and the third chunk of size 4 kilobytes stored in s
 In steady state, the M-server maintains the following metadata about files in your file system: file name, names
 of Linux files that correspond to the chunks of the file, which server hosts which chunk, when was a chunk to server
 mapping last updated.
+
 Initially, the M-server does not have the chunk name to server mapping, nor does it have the corresponding time
 of last mapping update. Every 5 seconds, the servers send heartbeat messages to the M-server with the list of Linux
 files they store. The M-server uses these heartbeat messages to populate/update the metadata.
@@ -51,12 +52,44 @@ first chunk of the file, and adds an entry for that file in its directory. For r
 name and the offset, the M-server determines the chunk, and the offset within that chunk where the operation has to
 be performed, and sends the information to the client. Then, the client directly contacts the corresponding server and
 performs the operations.
+
 In effect, clients and servers communicate with each other to exchange data, while the clients and servers commu-
 nicate with the M-server to exchange metadata.
 You can assume that the maximize amount of data that can be appended at a time is 2048 bytes. If the current size of
 the last chunk of the file, where the append operation is to be performed, isSsuch that 8192 − S < appended data size
 then the rest of that chunk is padded with a null character, a new chunk is created and the append operation is performed
 there.
+
+```
+Extented Functionalities: File system with replicated chunks
+```
+1. Instead of three file servers, now you have five file servers namedS 1 , S 2 ,... , S 5.
+
+2. For each chunk, three replicas are maintained at serversSi, SjandSk, where 1 ≤i, j, k≤ 5 andi 6 =j 6 =k.
+
+3. When a new chunk is to be created, the M-server selects three chunk servers at random and asks each one of
+    them to create a copy of the chunk.
+
+4. For each chunk, the M-server maintains information about the chunk servers that host replicas of the chunk.
+
+5. Any append to a chunk is performed to all live replicas of the chunk. Use two-phase commit protocol, with the
+    appending client as the coordinator and the relevant chunk servers as cohorts, to perform writes. Assume there
+    is no server failure during an append operation.
+
+6. If multiple appends to the same chunk are submitted concurrently by different clients, the M-server determines
+    the order in which the appends are performed on all the chunks. Once a client completes an append to a chunk
+    it informs the M-server. Only then does the M-server permit another client to perform an append to the same
+    chunk.
+
+7. A read from a chunk can be performed on any one of the current replicas of the chunk.
+
+8. A recovering chunk server may have missed appends to its chunks while it was down. In such situations, the
+    recovering chunk server, with the help of the M-server, determines which of its chunks are out of date, and
+    synchronizes those chunks with their latest version by copying the missing appends from one of the current
+    replicas.
+
+9. Only after all chunks of a recovering chunk server are up-to-date does that chunk server resume participating in
+    append and read operations.
 
 ## 4 Operations
 
