@@ -103,7 +103,7 @@ public class NetClient implements Node {
 			algorithm.setOur_request_clock(algorithm.getClock());
 		}
 		for (int neighbor : clientNeighbors) {
-			private_Message(neighbor, type);
+			private_Message(neighbor, type, null);
 		}
 	}
 
@@ -125,7 +125,7 @@ public class NetClient implements Node {
 	}
 
 	@Override
-	public synchronized void private_Message(int receiver, String type) {
+	public synchronized void private_Message(int receiver, String type, String chunk_name) {
 		if (type.equals(MsgType.REPLY)) {
 			algorithm.local_event();
 		}
@@ -180,7 +180,7 @@ public class NetClient implements Node {
 				// one neighbor tells me he/she login, then I send message to tell me I have
 				// already received
 				// your message
-				private_Message(message.getSender(), MsgType.LOGIN_SUCCESS);
+				private_Message(message.getSender(), MsgType.LOGIN_SUCCESS, null);
 			} else if (message.getType().equals(MsgType.LOGIN_SUCCESS)) {
 				// one neighbor know I login
 				login_nodes.add(message.getSender());
@@ -188,7 +188,7 @@ public class NetClient implements Node {
 				algorithm.process_reply(message);
 			} else if (message.getType().equals(MsgType.REQUEST)) {
 				if (algorithm.process_request(message)) {
-					private_Message(message.getSender(), MsgType.REPLY);
+					private_Message(message.getSender(), MsgType.REPLY, null);
 				} else {
 					System.err.println("Message is defered: " + message);
 					System.err.println("My req time: " + algorithm.getOur_request_clock());
@@ -259,7 +259,7 @@ public class NetClient implements Node {
 
 	private void request_critical_section() {
 		int times = 0;
-		while (times < 10) {
+		while (times < 5) {
 
 			algorithm.setReques_critical_section(true);
 			broadcast(MsgType.REQUEST);
@@ -278,7 +278,7 @@ public class NetClient implements Node {
 			log();
 			// exit_critical_section
 			for (int neighbor : algorithm.getDefered_reply()) {
-				private_Message(neighbor, MsgType.REPLY);
+				private_Message(neighbor, MsgType.REPLY, null);
 			}
 			algorithm.getDefered_reply().clear();
 			algorithm.setReques_critical_section(false);
@@ -313,11 +313,11 @@ public class NetClient implements Node {
 		Random rand = new Random();
 		int choice = rand.nextInt(6);
 		if (choice >= 4) {
-			private_Message(mserverID, MsgType.APPEND);
+			private_Message(mserverID, MsgType.CREATE, null);
 		} else if (choice > 1 && choice < 4) {
-			private_Message(mserverID, MsgType.CREATE);
+			private_Message(mserverID, MsgType.CREATE, null);
 		} else if (choice <= 1) {
-			private_Message(mserverID, MsgType.READ);
+			private_Message(mserverID, MsgType.CREATE, null);
 		}
 	}
 

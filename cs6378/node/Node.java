@@ -19,7 +19,7 @@ public interface Node {
 	 * @param receiver id of node to receive message
 	 * @param type of sent message
 	 */
-	public void private_Message(int receiver, String type);
+	public void private_Message(int receiver, String type, String chunk_name);
 	
 	/**
 	 * send a private message

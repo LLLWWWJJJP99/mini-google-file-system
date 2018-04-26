@@ -4,24 +4,28 @@
 # a comment and should be ignored by the parser.
 #
 # Number of nodes
-7
+9
 # Here we list the individual nodes
 #
 # Format is:
 # UID Hostname Port UIDs of Neighbors
-123 127.0.0.1 50010
-5 127.0.0.1 50001
-23 127.0.0.1 50002
-1 127.0.0.1 50033
-2 127.0.0.1 50004
-3 127.0.0.1 50005
-4 127.0.0.1 50006
+1 127.0.0.1 50009
+2 127.0.0.1 50001
+3 127.0.0.1 50002
+4 127.0.0.1 50003
+5 127.0.0.1 50004
+6 127.0.0.1 50005
+7 127.0.0.1 50006
+8 127.0.0.1 50007
+9 127.0.0.1 50008
 
-# Node #nodetype
-5 client
-123 client
-23 client
+# Node #Node Type
+6 client
+7 client
+8 client
 1 server
 2 server
 3 server
-4 mserver
+4 server
+5 server
+9 mserver

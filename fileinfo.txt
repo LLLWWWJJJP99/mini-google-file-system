@@ -1,5 +1,8 @@
-3
+2
 
-11 abc.txt,def.txt,ghi.txt
-12 aba.txt,dea.txt
-13 aaa.txt
+11 abc.txt,def.txt
+12 aba.txt
+
+abc.txt|a^3,a^6,a^9
+def.txt|b@1,b@2,b@3
+aba.txt|c&2,c&1,c&3

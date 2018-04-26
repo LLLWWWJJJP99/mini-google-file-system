@@ -11,6 +11,7 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -41,6 +42,7 @@ public class MetaServer implements Node {
 	private final int port;
 	private final String ip;
 	private static int filename = 0;
+	private Map<String, String[]> chunk_to_replica;
 
 	public MetaServer() {
 		this.chunk_size = Collections.synchronizedMap(new HashMap<>());
@@ -49,6 +51,7 @@ public class MetaServer implements Node {
 		this.servers_lasttime_heartbeat = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_to_server = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_lasttime_updated = Collections.synchronizedMap(new HashMap<>());
+		this.chunk_to_replica = Collections.synchronizedMap(new HashMap<>());
 		this.nodeLookup = new NodeLookup();
 		// read ip and port for each node
 		NodeInfo info = NodeUtil.readConfig(FILEADDR, nodeLookup.getId_to_addr(), nodeLookup.getId_to_index());
@@ -74,7 +77,7 @@ public class MetaServer implements Node {
 
 		this.ip = nodeLookup.getIP(this.id);
 		this.port = Integer.parseInt(nodeLookup.getPort(this.id));
-		file_to_chunks = FileUtil.readFileConfig();
+		file_to_chunks = FileUtil.readFileConfig(chunk_to_replica);
 	}
 
 	private void init() {
@@ -132,7 +135,7 @@ public class MetaServer implements Node {
 			System.out.println("DMessage: " + dMessage);
 			Integer chosen_server = choose_server();
 			// check if chosen server is dead then return failure message
-			if (chosen_server == null || !serverNeighbors.get(chosen_server)) {
+			if (!MsgType.CREATE.equals(dMessage.getType()) && is_server_dead(chosen_server)) {
 				System.err.println("Chosen server " + chosen_server + " is dead ");
 				MetaMessage failure = new MetaMessage();
 				failure.setOffset(-1);
@@ -145,7 +148,41 @@ public class MetaServer implements Node {
 			} else {
 				// send create message to chosen server
 				if (dMessage.getType().equals(MsgType.CREATE)) {
-					private_Message(chosen_server, MsgType.CREATE);
+					// private_Message(chosen_server, MsgType.CREATE);
+					Integer[] chosen_servers = choose_three_servers();
+					
+					boolean all_dead = true;
+					for (Integer server : chosen_servers) {
+						all_dead &= is_server_dead(server);
+					}
+
+					if (!all_dead) {
+						String chunk_name = UUID.randomUUID().toString();
+						for (Integer server : chosen_servers) {
+							if(serverNeighbors.get(server)) {
+								private_Message(server, MsgType.CREATE, chunk_name);
+							}
+						}
+						filename++;
+					} else {
+						System.err.println("Chosen servers all are dead ");
+						MetaMessage failure = new MetaMessage();
+						failure.setOffset(-1);
+						failure.setContent(dMessage.getType() + " Chosen servers all are dead ");
+						failure.setClock(dMessage.getClock());
+						failure.setReceiver(dMessage.getSender());
+						failure.setSender(id);
+						failure.setType(MsgType.FAILURE);
+						private_Message(failure);
+					}
+					System.out.println("<========================================>");
+					for(Map.Entry<String, String[]> entry : chunk_to_replica.entrySet()) {
+						String[] replicas = entry.getValue();
+						String chunk = entry.getKey();
+						String part2 = String.join(",", replicas);
+						System.out.println(chunk + " || " + part2);
+					}
+					System.out.println("<========================================>");
 					// send append message to chosen server
 				} else if (dMessage.getType().equals(MsgType.APPEND)) {
 					// randomly choose a file and check whether its last chunk has enough to insert
@@ -181,10 +218,11 @@ public class MetaServer implements Node {
 					// if new lines exceed last chunk's size limit then tell client to create a new
 					// chunk on chosen server
 					if (8192l - chosen_chunk_size < content_size) {
-						String new_chunk_name = UUID.randomUUID().toString();
+						String new_replica_name = UUID.randomUUID().toString();
 						reply.setType(MsgType.CREATE);
-						reply.setContent(content + "*" + new_chunk_name + "*" + chosen_server);
-						updateChunkInfo(chosen_file, new_chunk_name, chosen_server, chosen_chunk_size);
+						reply.setContent(content + "*" + new_replica_name + "*" + chosen_server);
+						//????????????????????????????????????????????????????????????????????????????????
+						// updateChunkInfo(chosen_file, new_replica_name, chosen_server, chosen_chunk_size, chosen_chunk);
 
 					} else {
 						// otherwise go last chunk 's corresponding server and append new lines
@@ -221,6 +259,24 @@ public class MetaServer implements Node {
 		}
 	}
 
+	private synchronized boolean is_server_dead(Integer chosen_server) {
+		return (chosen_server == null || !serverNeighbors.get(chosen_server));
+	}
+
+	private synchronized Integer[] choose_three_servers() {
+		Integer[] chosen_servers = new Integer[3];
+		int index = 0;
+		List<Integer> list = new ArrayList<>(serverNeighbors.keySet());
+		Random random = new Random();
+		while(index < 3) {
+			int rand = random.nextInt(list.size());
+			Integer num = list.remove(rand);
+			chosen_servers[index] = num;
+			index++;
+		}
+		return chosen_servers;
+	}
+
 	/**
 	 * randomly choose a server
 	 * 
@@ -253,8 +309,7 @@ public class MetaServer implements Node {
 	}
 
 	@Override
-	public synchronized void private_Message(int receiver, String type) {
-
+	public synchronized void private_Message(int receiver, String type, String chunk_name) {
 		String addr = nodeLookup.getIP(receiver);
 		int port = Integer.parseInt(nodeLookup.getPort(receiver));
 		try {
@@ -262,21 +317,21 @@ public class MetaServer implements Node {
 			ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
 			// send a create message to receiver directly
 			if (MsgType.CREATE.equals(type)) {
-				String chunk_name = UUID.randomUUID().toString();
+				String replica_name = UUID.randomUUID().toString();
 				String file_name = filename + "#";
 				if (serverNeighbors.get(receiver)) {
 					file_to_chunks.putIfAbsent(file_name, new ArrayList<>());
-					updateChunkInfo(file_name, chunk_name, receiver, 0l);
+					updateChunkInfo(file_name, replica_name, receiver, 0l, chunk_name);
 
 					MetaMessage message = new MetaMessage();
 					message.setClock(-1);
-					message.setContent(chunk_name);
+					message.setContent(replica_name);
 					message.setOffset(-1);
 					message.setSender(id);
 					message.setReceiver(receiver);
 					message.setType(MsgType.CREATE);
 					oos.writeObject(message);
-					System.out.println("Meta Server Wants to Create " + file_name + " - " + chunk_name);
+					System.out.println("Meta Server Wants to Create " + file_name + " - " + chunk_name + " - " + replica_name);
 				} else {
 					System.err.println("While Transfering the Create Message, Server " + receiver + " dies");
 				}
@@ -294,24 +349,33 @@ public class MetaServer implements Node {
 	 * update meta data with file name, chunk name and node id and chunk size
 	 * 
 	 * @param file_name
-	 * @param chunk_name
+	 * @param replica_name
 	 * @param receiver
 	 * @param chunksize
+	 * @param chunk_name
 	 */
-	private synchronized void updateChunkInfo(String file_name, String chunk_name, int receiver, long chunksize) {
+	private synchronized void updateChunkInfo(String file_name, String replica_name, int receiver, long chunksize, String chunk_name) {
 		file_to_chunks.get(file_name).add(chunk_name);
-		chunk_to_server.put(chunk_name, receiver);
+		chunk_to_server.put(replica_name, receiver);
+		chunk_to_replica.putIfAbsent(chunk_name, new String[3]);
+		String[] replicas = chunk_to_replica.get(chunk_name);
+		for(int i = 0; i < replicas.length; i++) {
+			if(replicas[i] == null || replicas[i].equals("")) {
+				replicas[i] = replica_name;
+				break;
+			}
+		}
 		Calendar cal = Calendar.getInstance();
 		cal.setTimeInMillis(System.currentTimeMillis());
 		String timeString = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(cal.getTime());
 		chunk_lasttime_updated.put(chunk_name, timeString);
 		chunk_size.put(chunk_name, chunksize);
-		filename++;
 	}
-
+	
 	public static void main(String[] args) {
 		MetaServer server = new MetaServer();
 		server.init();
+		
 		/*
 		 * DataMessage message = new DataMessage(); message.setClock(-1);
 		 * message.setContent("null"); message.setOffset(1); message.setReceiver(3);

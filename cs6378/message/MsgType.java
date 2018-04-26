@@ -10,4 +10,6 @@ public interface MsgType {
 	String APPEND = "append";
 	String READ = "read";
 	String FAILURE = "failure";
+	
+	String CHUNK_DELIMITER = "chunk_delimiter";
 }

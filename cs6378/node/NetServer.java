@@ -82,7 +82,7 @@ public class NetServer implements Node {
 			@Override
 			public void run() {
 				while (true) {
-					private_Message(mserverID, MsgType.HEARTBEAT);
+					private_Message(mserverID, MsgType.HEARTBEAT, null);
 					try {
 						Thread.sleep(5 * 1000);
 					} catch (InterruptedException e) {
@@ -246,7 +246,7 @@ public class NetServer implements Node {
 	}
 	
 	@Override
-	public synchronized void private_Message(int receiver, String type) {
+	public synchronized void private_Message(int receiver, String type, String chunk_name) {
 
 		String addr = nodeLookup.getIP(receiver);
 		int port = Integer.parseInt(nodeLookup.getPort(receiver));
