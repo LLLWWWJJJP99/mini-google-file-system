@@ -19,6 +19,8 @@ import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import cs6378.message.MetaMessage;
+import cs6378.message.CommitMessage;
+import cs6378.message.CommitStatus;
 import cs6378.message.DataMessage;
 import cs6378.message.HeartbeatMessage;
 import cs6378.message.Message;
@@ -37,8 +39,9 @@ public class NetServer implements Node {
 	private final int port;
 	private final String ip;
 	private final String FILEPREFIX;
-
+	private String commit_status;
 	public NetServer(String id) {
+		commit_status = CommitStatus.NORMAL;
 		this.id = Integer.parseInt(id);
 		FILEPREFIX = ".//files" + id + "//";
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
@@ -69,7 +72,7 @@ public class NetServer implements Node {
 		this.port = Integer.parseInt(nodeLookup.getPort(this.id));
 	}
 
-	private void init() {
+	public void init() {
 		System.out.println("My ID is " + id);
 		// start to receive messages
 		new Thread(new NodeListener(this, port)).start();
@@ -204,6 +207,29 @@ public class NetServer implements Node {
 				reply.setSender(id);
 				reply.setType(MsgType.READ);
 				private_Message(reply);
+			}
+		} else if (realClazz.equals(CommitMessage.class.getSimpleName())) {
+			CommitMessage cmMessage = (CommitMessage) message;
+			if(cmMessage.getType().equals(MsgType.COMMIT_REQ)) {
+				if(commit_status.equals(CommitStatus.NORMAL)) {
+					CommitMessage agree = new CommitMessage.CommitMessageBuilder()
+							.alive_servers(null)
+							.clock(-1)
+							.receiver(cmMessage.getSender())
+							.sender(cmMessage.getReceiver())
+							.type(MsgType.AGREE)
+							.build();
+					commit_status = CommitStatus.WAIT;
+					private_Message(agree);
+				}else {
+					System.err.println("Not Normal for Receiving COMMIT_REQ");
+				}
+			}else if(cmMessage.getType().equals(MsgType.COMMIT)) {
+				if(commit_status.equals(CommitStatus.WAIT)) {
+					commit_status = CommitStatus.NORMAL;
+				}else {
+					System.err.println("Not Wait for Receiving COMMIT");
+				}
 			}
 		}
 	}

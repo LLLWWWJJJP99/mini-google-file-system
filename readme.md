@@ -111,7 +111,8 @@ Extented Functionalities: File system with replicated chunks
 5. use java -jar gmserver.jar (you should jot it down in config.txt) to start a metaserver
 
 ```
-You should set up file directories like the one i provide here. files+serverid eg: files1, files2... Feel free to contact me to get more details about how to run the project. My Email:wxl163530@gmail.com
+You should set up file directories like the one i provide here. files+serverid eg: files1, files2... 
+Feel free to contact me to get more details about how to run the project. My Email:wxl163530@gmail.com
 ```
 
 

@@ -13,6 +13,7 @@ import java.util.Set;
 
 import cs6378.algo.Ricart_Agrawala_Algorithm;
 import cs6378.message.MetaMessage;
+import cs6378.message.CommitMessage;
 import cs6378.message.DataMessage;
 import cs6378.message.Message;
 import cs6378.message.MsgType;
@@ -32,9 +33,11 @@ public class NetClient implements Node {
 	private Set<Integer> serverNeighbors;
 	private Ricart_Agrawala_Algorithm algorithm;
 	private Integer mserverID;
+	private Set<Integer> commit_ack;
 
 	public NetClient(String id) {
 		this.id = Integer.parseInt(id);
+		this.commit_ack = Collections.synchronizedSet(new HashSet<>());
 		this.serverNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.nodeLookup = new NodeLookup();
@@ -71,7 +74,7 @@ public class NetClient implements Node {
 		return port;
 	}
 
-	private void init() {
+	public void init() {
 		algorithm = new Ricart_Agrawala_Algorithm(clientNeighbors.size(), id);
 		login_nodes = Collections.synchronizedSet(new HashSet<>());
 
@@ -244,6 +247,14 @@ public class NetClient implements Node {
 				System.out.println(id + " reads " + dMessage.getContent() + " from " + dMessage.getFilaName() + " at "
 						+ dMessage.getSender());
 			}
+		} else if(realClazz.equals(CommitMessage.class.getSimpleName())) {
+			CommitMessage cmMessage = (CommitMessage) message;
+			if(cmMessage.getType().equals(MsgType.GET_ALIVE_SERVERS)) {
+				commit_ack.addAll(cmMessage.getAlive_servers());
+			}else if(cmMessage.getType().equals(MsgType.AGREE)) {
+				commit_ack.remove(new Integer(cmMessage.getSender()));
+				System.err.println("commit_ack remove one : " + commit_ack);
+			}
 		}
 	}
 
@@ -257,7 +268,7 @@ public class NetClient implements Node {
 		}
 	}
 
-	private void request_critical_section() {
+	public void request_critical_section() {
 		int times = 0;
 		while (times < 5) {
 
@@ -311,13 +322,72 @@ public class NetClient implements Node {
 	 */
 	private void enter_critical_section() {
 		Random rand = new Random();
-		int choice = rand.nextInt(6);
+		int choice = rand.nextInt(8);
 		if (choice >= 4) {
-			private_Message(mserverID, MsgType.READ, null);
+			two_phase_commit();
+			System.err.println("Success In Two Phases Commit");
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			private_Message(mserverID, MsgType.APPEND, null);
 		} else if (choice > 1 && choice < 4) {
 			private_Message(mserverID, MsgType.READ, null);
 		} else if (choice <= 1) {
-			private_Message(mserverID, MsgType.READ, null);
+			private_Message(mserverID, MsgType.CREATE, null);
+		}
+	}
+
+	private boolean get_alive_servers() {
+		return commit_ack.size() != 0;
+	}
+
+	private void two_phase_commit() {
+		CommitMessage commit_query = new CommitMessage.CommitMessageBuilder()
+				.sender(id)
+				.receiver(mserverID)
+				.type(MsgType.GET_ALIVE_SERVERS)
+				.alive_servers(null)
+				.clock(algorithm.getClock()).build();
+
+		private_Message(commit_query);
+		while (!get_alive_servers()) {
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		Set<Integer> acks = new HashSet<>(commit_ack);
+		System.err.println("commit_ack in total : " + commit_ack);
+		for(Integer server : acks) {
+			CommitMessage commit_request = new CommitMessage.CommitMessageBuilder()
+					.sender(id)
+					.receiver(server)
+					.type(MsgType.COMMIT_REQ)
+					.alive_servers(null)
+					.clock(algorithm.getClock()).build();
+			private_Message(commit_request);
+		}
+		
+		while(get_alive_servers()) {
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		for(Integer server : acks) {
+			CommitMessage commit_request = new CommitMessage.CommitMessageBuilder()
+					.sender(id)
+					.receiver(server)
+					.type(MsgType.COMMIT)
+					.alive_servers(null)
+					.clock(algorithm.getClock()).build();
+			private_Message(commit_request);
 		}
 	}
 

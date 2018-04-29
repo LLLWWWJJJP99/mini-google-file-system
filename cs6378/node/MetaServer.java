@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import cs6378.message.MetaMessage;
+import cs6378.message.CommitMessage;
 import cs6378.message.HeartbeatMessage;
 import cs6378.message.Message;
 import cs6378.message.MsgType;
@@ -80,7 +81,7 @@ public class MetaServer implements Node {
 		file_to_chunks = FileUtil.readFileConfig(chunk_to_replica);
 	}
 
-	private void init() {
+	public void init() {
 		// start to accept mesasge
 		new Thread(new NodeListener(this, port)).start();
 
@@ -138,15 +139,14 @@ public class MetaServer implements Node {
 
 			// send create message to chosen server
 			if (dMessage.getType().equals(MsgType.CREATE)) {
-				// private_Message(chosen_server, MsgType.CREATE);
 				Integer[] chosen_servers = choose_three_servers();
 
-				boolean all_dead = true;
+				boolean all_alive = true;
 				for (Integer server : chosen_servers) {
-					all_dead &= is_server_dead(server);
+					all_alive &= is_server_dead(server);
 				}
 
-				if (!all_dead) {
+				if (all_alive) {
 					String chunk_name = UUID.randomUUID().toString();
 					for (Integer server : chosen_servers) {
 						if (serverNeighbors.get(server)) {
@@ -155,8 +155,15 @@ public class MetaServer implements Node {
 					}
 					filename++;
 				} else {
-					System.err.println("Chosen servers all are dead ");
-					send_failure(dMessage, "CREATE_OPS");
+					StringBuilder sb = new StringBuilder();
+					for (Integer server : chosen_servers) {
+						if (!is_server_dead(server)) {
+							sb.append(server);
+							sb.append(",");
+						}
+					}
+					System.err.println("Chosen servers: " + sb.toString() + " are dead ");
+					send_failure(dMessage, "CREATE_OPS_for_" + sb.toString());
 				}
 				System.out.println("<========================================>");
 				for (Map.Entry<String, String[]> entry : chunk_to_replica.entrySet()) {
@@ -176,9 +183,6 @@ public class MetaServer implements Node {
 				String chosen_file = file_list.get(rand.nextInt(file_list.size()));
 				List<String> chunks = file_to_chunks.get(chosen_file);
 
-				// System.out.println("chosen_file: " + chosen_file);
-				// System.out.println("chunks: " + chunks);
-
 				String chosen_chunk = chunks.get(chunks.size() - 1);
 
 				int choice = rand.nextInt(10);
@@ -189,33 +193,38 @@ public class MetaServer implements Node {
 					Arrays.fill(bytes, (byte) 1);
 					content = new String(bytes);
 				}
-				// System.out.println("chosen_chunk: " + chosen_chunk);
-				// System.out.println("chunk_size: " + chunk_size);
-				long chosen_chunk_size = chunk_size.get(chosen_chunk);
-				MetaMessage reply = new MetaMessage();
-				reply.setOffset(-1);
-				reply.setClock(dMessage.getClock());
-				reply.setReceiver(dMessage.getSender());
-				reply.setSender(id);
-				long content_size = content.getBytes().length;
-				// if new lines exceed last chunk's size limit then tell client to create a new
-				// chunk on chosen server
-				if (8192l - chosen_chunk_size < content_size) {
-					String new_replica_name = UUID.randomUUID().toString();
-					reply.setType(MsgType.CREATE);
-					// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-					// reply.setContent(content + "*" + new_replica_name + "*" + chosen_server);
-					// ????????????????????????????????????????????????????????????????????????????????
-					// updateChunkInfo(chosen_file, new_replica_name, chosen_server,
-					// chosen_chunk_size, chosen_chunk);
+				System.out.println("chosen_chunk: " + chosen_chunk);
+				System.out.println("chunk_size: " + chunk_size);
+				String[] chosen_replicas = chunk_to_replica.get(chosen_chunk);
+				for(String chosen_replica : chosen_replicas) {
+					long chosen_chunk_size = chunk_size.get(chosen_replica);
+					long content_size = content.getBytes().length;
+					// if new lines exceed last chunk's size limit then tell client to create a new
+					// chunk on chosen server
+					if (8192l - chosen_chunk_size < content_size) {
+						String new_chunk_name = UUID.randomUUID().toString();
+						Integer[] three_alive_servers = choose_three_servers(true);
+						
+						for (Integer server : three_alive_servers) {
+							private_Message(server, MsgType.CREATE, new_chunk_name);
+						}
+					} else {
+						Integer related_server = replica_to_server.get(chosen_replica);
+						if (serverNeighbors.get(related_server)) {
+							MetaMessage reply = new MetaMessage();
+							reply.setOffset(-1);
+							reply.setClock(dMessage.getClock());
+							reply.setReceiver(dMessage.getSender());
+							reply.setSender(id);
 
-				} else {
-					// otherwise go last chunk 's corresponding server and append new lines
-					reply.setType(MsgType.APPEND);
-					int corresponding_server = replica_to_server.get(chosen_chunk);
-					reply.setContent(content + "*" + chosen_chunk + "*" + corresponding_server);
+							// otherwise go last chunk 's corresponding server and append new lines
+							reply.setType(MsgType.APPEND);
+							reply.setContent(content + "*" + chosen_replica + "*" + related_server);
+
+							private_Message(reply);
+						}
+					}
 				}
-				private_Message(reply);
 				// receive a new read message from client
 			} else if (MsgType.READ.equals(dMessage.getType())) {
 				List<String> file_list = new ArrayList<>(file_to_chunks.keySet());
@@ -231,20 +240,20 @@ public class MetaServer implements Node {
 				boolean all_dead = true;
 				String chosen_replica = null;
 				String[] chosen_replicas = chunk_to_replica.get(chosen_chunk);
-				for(String replica : chosen_replicas) {
+				for (String replica : chosen_replicas) {
 					Integer corresponding_server = replica_to_server.get(replica);
-					if(serverNeighbors.get(corresponding_server)) {
+					if (serverNeighbors.get(corresponding_server)) {
 						all_dead = false;
 						chosen_replica = replica;
 						break;
 					}
 				}
-				
-				if(all_dead){
+
+				if (all_dead) {
 					System.err.println(" Meta Server found all file server die");
 					send_failure(dMessage, chosen_chunk);
-					
-				}else {
+
+				} else {
 					int replic_server = replica_to_server.get(chosen_replica);
 					long limit = chunk_size.get(chosen_replica);
 					long offset = limit == 0 ? 0l : ThreadLocalRandom.current().nextLong(limit);
@@ -258,6 +267,26 @@ public class MetaServer implements Node {
 					reply.setType(MsgType.READ);
 					private_Message(reply);
 				}
+			}
+		} else if (realClazz.equals(CommitMessage.class.getSimpleName())) {
+			CommitMessage cmMessage = (CommitMessage) message;
+			if(cmMessage.getType().equals(MsgType.GET_ALIVE_SERVERS)) {
+				Set<Integer> alive_servers = new HashSet<>();
+				for(Map.Entry<Integer, Boolean> server : serverNeighbors.entrySet()) {
+					if(server.getValue()) {
+						alive_servers.add(server.getKey());
+					}
+				}
+				CommitMessage get_alive_servers = new CommitMessage.CommitMessageBuilder()
+						.clock(0)
+						.alive_servers(alive_servers)
+						.receiver(cmMessage.getSender())
+						.sender(cmMessage.getReceiver())
+						.type(MsgType.GET_ALIVE_SERVERS)
+						.build();
+				private_Message(get_alive_servers);
+			}else {
+				System.err.println("Wrong Type Commit Message:");
 			}
 		}
 	}
@@ -282,6 +311,29 @@ public class MetaServer implements Node {
 		Integer[] chosen_servers = new Integer[3];
 		int index = 0;
 		List<Integer> list = new ArrayList<>(serverNeighbors.keySet());
+		Random random = new Random();
+		while (index < 3) {
+			int rand = random.nextInt(list.size());
+			Integer num = list.remove(rand);
+			chosen_servers[index] = num;
+			index++;
+		}
+		return chosen_servers;
+	}
+	
+	private synchronized Integer[] choose_three_servers(boolean alive) {
+		Integer[] chosen_servers = new Integer[3];
+		int index = 0;
+		List<Integer> list = new ArrayList<>();
+		for(Integer server : serverNeighbors.keySet()) {
+			if(serverNeighbors.get(server) == alive) {
+				list.add(server);
+			}
+		}
+		if(list.size() < 3) {
+			throw new RuntimeException(" # of Alive Sever is below 3 ");
+		}
+		
 		Random random = new Random();
 		while (index < 3) {
 			int rand = random.nextInt(list.size());

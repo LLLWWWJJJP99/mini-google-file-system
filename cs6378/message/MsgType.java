@@ -10,6 +10,11 @@ public interface MsgType {
 	String APPEND = "append";
 	String READ = "read";
 	String FAILURE = "failure";
-	
 	String CHUNK_DELIMITER = "chunk_delimiter";
+	// two phase commit protocol
+	String GET_ALIVE_SERVERS = "get_alive_servers";
+	String COMMIT_REQ = "commit_req";
+	String COMMIT = "commit";
+	String ABORT = "abort";
+	String AGREE = "agree";
 }
