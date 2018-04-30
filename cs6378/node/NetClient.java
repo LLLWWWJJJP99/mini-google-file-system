@@ -296,7 +296,7 @@ public class NetClient implements Node {
 			System.out.println(id + " exits cs ");
 			times++;
 
-			int waitTime = 10;
+			int waitTime = 15;
 			// rest 10s to make next request
 			while (waitTime > 0) {
 				try {
@@ -331,11 +331,11 @@ public class NetClient implements Node {
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
-			private_Message(mserverID, MsgType.APPEND, null);
+			private_Message(mserverID, MsgType.READ, null);
 		} else if (choice > 1 && choice < 4) {
 			private_Message(mserverID, MsgType.READ, null);
 		} else if (choice <= 1) {
-			private_Message(mserverID, MsgType.CREATE, null);
+			private_Message(mserverID, MsgType.READ, null);
 		}
 	}
 

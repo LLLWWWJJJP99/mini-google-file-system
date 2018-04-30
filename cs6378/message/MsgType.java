@@ -17,4 +17,10 @@ public interface MsgType {
 	String COMMIT = "commit";
 	String ABORT = "abort";
 	String AGREE = "agree";
+	
+	// wakeup message
+	String QUERY_VERSION = "query_version";
+	String GET_CONTENT = "get_content";
+	String SEND_CONTENT = "send_content";
+			
 }

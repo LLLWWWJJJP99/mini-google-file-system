@@ -24,6 +24,7 @@ import cs6378.message.CommitMessage;
 import cs6378.message.HeartbeatMessage;
 import cs6378.message.Message;
 import cs6378.message.MsgType;
+import cs6378.message.WakeUpMessage;
 import cs6378.util.FileUtil;
 import cs6378.util.NodeInfo;
 import cs6378.util.NodeLookup;
@@ -35,7 +36,10 @@ public class MetaServer implements Node {
 	private Map<String, String> chunk_lasttime_updated;
 	private Map<Integer, Boolean> serverNeighbors;
 	private Map<Integer, Long> servers_lasttime_heartbeat;
-	private Map<String, Long> chunk_size;
+	private Map<String, Long> replica_size;
+	private Map<String, String[]> chunk_to_replica;
+	private Map<String, String> replica_to_chunk;
+	private Map<String, Integer> replica_version;
 	private Integer id;
 	private NodeLookup nodeLookup;
 	private static final String FILEADDR = "config2.txt";
@@ -43,16 +47,17 @@ public class MetaServer implements Node {
 	private final int port;
 	private final String ip;
 	private static int filename = 0;
-	private Map<String, String[]> chunk_to_replica;
 
 	public MetaServer() {
-		this.chunk_size = Collections.synchronizedMap(new HashMap<>());
+		this.replica_size = Collections.synchronizedMap(new HashMap<>());
 		this.serverNeighbors = Collections.synchronizedMap(new HashMap<>());
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.servers_lasttime_heartbeat = Collections.synchronizedMap(new HashMap<>());
 		this.replica_to_server = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_lasttime_updated = Collections.synchronizedMap(new HashMap<>());
 		this.chunk_to_replica = Collections.synchronizedMap(new HashMap<>());
+		this.replica_to_chunk = Collections.synchronizedMap(new HashMap<>());
+		this.replica_version = Collections.synchronizedMap(new HashMap<>());
 		this.nodeLookup = new NodeLookup();
 		// read ip and port for each node
 		NodeInfo info = NodeUtil.readConfig(FILEADDR, nodeLookup.getId_to_addr(), nodeLookup.getId_to_index());
@@ -79,6 +84,13 @@ public class MetaServer implements Node {
 		this.ip = nodeLookup.getIP(this.id);
 		this.port = Integer.parseInt(nodeLookup.getPort(this.id));
 		file_to_chunks = FileUtil.readFileConfig(chunk_to_replica);
+		for(Map.Entry<String, String[]> entry : chunk_to_replica.entrySet()) {
+			String[] replicas = entry.getValue();
+			for(String replica : replicas) {
+				replica_version.put(replica, 0);
+				replica_to_chunk.put(replica, entry.getKey());
+			}
+		}
 	}
 
 	public void init() {
@@ -128,7 +140,7 @@ public class MetaServer implements Node {
 			for (String[] info : chunk_server_info) {
 				replica_to_server.put(info[0], hMessage.getSender());
 				chunk_lasttime_updated.put(info[0], info[1]);
-				chunk_size.put(info[0], Long.parseLong(info[2].trim()));
+				replica_size.put(info[0], Long.parseLong(info[2].trim()));
 			}
 			// accept an message from client
 		} else if (realClazz.equals(MetaMessage.class.getSimpleName())) {
@@ -194,20 +206,21 @@ public class MetaServer implements Node {
 					content = new String(bytes);
 				}
 				System.out.println("chosen_chunk: " + chosen_chunk);
-				System.out.println("chunk_size: " + chunk_size);
+				System.out.println("chunk_size: " + replica_size);
 				String[] chosen_replicas = chunk_to_replica.get(chosen_chunk);
 				for(String chosen_replica : chosen_replicas) {
-					long chosen_chunk_size = chunk_size.get(chosen_replica);
+					long chosen_replica_size = replica_size.get(chosen_replica);
 					long content_size = content.getBytes().length;
 					// if new lines exceed last chunk's size limit then tell client to create a new
 					// chunk on chosen server
-					if (8192l - chosen_chunk_size < content_size) {
+					if (8192l - chosen_replica_size < content_size) {
 						String new_chunk_name = UUID.randomUUID().toString();
 						Integer[] three_alive_servers = choose_three_servers(true);
 						
 						for (Integer server : three_alive_servers) {
 							private_Message(server, MsgType.CREATE, new_chunk_name);
 						}
+						break;
 					} else {
 						Integer related_server = replica_to_server.get(chosen_replica);
 						if (serverNeighbors.get(related_server)) {
@@ -220,7 +233,9 @@ public class MetaServer implements Node {
 							// otherwise go last chunk 's corresponding server and append new lines
 							reply.setType(MsgType.APPEND);
 							reply.setContent(content + "*" + chosen_replica + "*" + related_server);
-
+							
+							//update replica version number
+							replica_version.put(chosen_replica, replica_version.get(chosen_replica) + 1);
 							private_Message(reply);
 						}
 					}
@@ -255,7 +270,7 @@ public class MetaServer implements Node {
 
 				} else {
 					int replic_server = replica_to_server.get(chosen_replica);
-					long limit = chunk_size.get(chosen_replica);
+					long limit = replica_size.get(chosen_replica);
 					long offset = limit == 0 ? 0l : ThreadLocalRandom.current().nextLong(limit);
 					System.out.println("file size " + limit + " , offset " + offset);
 					MetaMessage reply = new MetaMessage();
@@ -287,6 +302,55 @@ public class MetaServer implements Node {
 				private_Message(get_alive_servers);
 			}else {
 				System.err.println("Wrong Type Commit Message:");
+			}
+		}else if(realClazz.equals(WakeUpMessage.class.getSimpleName())) {
+			WakeUpMessage wMessage = (WakeUpMessage) message;
+			if(wMessage.getType().equals(MsgType.QUERY_VERSION)) {
+				int receiver = wMessage.getSender();
+				String replica_name = wMessage.getReplica();
+				int version = wMessage.getVersion();
+				String related_chunk = replica_to_chunk.get(replica_name);
+				System.out.println("=================================");
+				System.out.println(replica_name);
+				System.out.println(replica_to_chunk);
+				System.out.println("=================================");
+				String[] replicas = chunk_to_replica.get(related_chunk);
+				int max = 0;
+				String chosen_replica = null;
+				for(String replica : replicas) {
+					if(!replica.equals(replica_name)) {
+						int other_version = replica_version.get(replica);
+						if(other_version > max) {
+							max = other_version;
+							chosen_replica = replica;
+						}
+					}
+				}
+				if(max == version) {
+					WakeUpMessage query_version = new WakeUpMessage.WakeUpMessageBuilder()
+							.content("")
+							.version(-1)
+							.replica(replica_name)
+							.build();
+					query_version.setReceiver(receiver);
+					query_version.setSender(id);
+					query_version.setType(MsgType.QUERY_VERSION);
+					private_Message(query_version);
+					System.out.println("1 " + query_version);
+				}else {
+					Integer related_server = replica_to_server.get(chosen_replica);
+					WakeUpMessage query_version = new WakeUpMessage.WakeUpMessageBuilder()
+							.remote(related_server)
+							.content("")
+							.replica(chosen_replica)
+							.version(max)
+							.build();
+					query_version.setReceiver(receiver);
+					query_version.setSender(id);
+					query_version.setType(MsgType.QUERY_VERSION);
+					private_Message(query_version);
+					System.out.println("2 " + query_version);
+				}
 			}
 		}
 	}
@@ -427,6 +491,7 @@ public class MetaServer implements Node {
 		file_to_chunks.get(file_name).add(chunk_name);
 		replica_to_server.put(replica_name, receiver);
 		chunk_to_replica.putIfAbsent(chunk_name, new String[3]);
+		replica_to_chunk.putIfAbsent(replica_name, chunk_name);
 		String[] replicas = chunk_to_replica.get(chunk_name);
 		for (int i = 0; i < replicas.length; i++) {
 			if (replicas[i] == null || replicas[i].equals("")) {
@@ -434,11 +499,12 @@ public class MetaServer implements Node {
 				break;
 			}
 		}
+		replica_version.put(replica_name, 0);
 		Calendar cal = Calendar.getInstance();
 		cal.setTimeInMillis(System.currentTimeMillis());
 		String timeString = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(cal.getTime());
 		chunk_lasttime_updated.put(chunk_name, timeString);
-		chunk_size.put(chunk_name, chunksize);
+		replica_size.put(chunk_name, chunksize);
 	}
 
 	public static void main(String[] args) {

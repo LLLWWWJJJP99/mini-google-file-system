@@ -1,6 +1,7 @@
 package cs6378.node;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
@@ -25,6 +26,7 @@ import cs6378.message.DataMessage;
 import cs6378.message.HeartbeatMessage;
 import cs6378.message.Message;
 import cs6378.message.MsgType;
+import cs6378.message.WakeUpMessage;
 import cs6378.util.NodeInfo;
 import cs6378.util.NodeLookup;
 import cs6378.util.NodeUtil;
@@ -40,12 +42,20 @@ public class NetServer implements Node {
 	private final String ip;
 	private final String FILEPREFIX;
 	private String commit_status;
+	private String version_output;
+	private Map<String, Integer> replica_version;
+	private Set<String> version_ack;
+	// private Set<Integer> wakeup;
 	public NetServer(String id) {
 		commit_status = CommitStatus.NORMAL;
 		this.id = Integer.parseInt(id);
+		version_output = "version_" + id;
 		FILEPREFIX = ".//files" + id + "//";
 		this.clientNeighbors = Collections.synchronizedSet(new HashSet<>());
 		this.serverNeighbors = Collections.synchronizedSet(new HashSet<>());
+		// this.wakeup = Collections.synchronizedSet(new HashSet<>());
+		this.replica_version = Collections.synchronizedMap(new HashMap<>());
+		this.version_ack = Collections.synchronizedSet(new HashSet<>());
 		this.nodeLookup = new NodeLookup();
 		// read nodes' ip port from config file
 		NodeInfo info = NodeUtil.readConfig(FILEADDR, nodeLookup.getId_to_addr(), nodeLookup.getId_to_index());
@@ -76,10 +86,44 @@ public class NetServer implements Node {
 		System.out.println("My ID is " + id);
 		// start to receive messages
 		new Thread(new NodeListener(this, port)).start();
+		File folder = new File(FILEPREFIX);
+		File[] files = folder.listFiles();
+		for (File file : files) {
+			replica_version.put(file.getName(), 0);
+		}
+		
+		version_ack.addAll(replica_version.keySet());
+		prepare_wakeup();
+		
 		// start to send heartbeat message
 		sendHeartbeatMessage();
 	}
-
+	
+	private void prepare_wakeup() {
+		for(String replica : replica_version.keySet()) {
+			WakeUpMessage wake = new WakeUpMessage.WakeUpMessageBuilder()
+					.content("")
+					.replica(replica)
+					.version(0)
+					.build();
+			wake.setClock(0);
+			wake.setReceiver(mserverID);
+			wake.setSender(id);
+			wake.setType(MsgType.QUERY_VERSION);
+			private_Message(wake);
+		}
+		
+		while(version_ack.size() > 0) {
+			System.err.println("left ack to receive : " + version_ack);
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		System.err.println("left ack to receive : " + version_ack);
+	}
+	
 	private void sendHeartbeatMessage() {
 		new Thread(new Runnable() {
 			@Override
@@ -139,7 +183,7 @@ public class NetServer implements Node {
 			}
 		}
 	}
-
+	
 	/**
 	 * create an empty new chunk
 	 * @param chuck_name
@@ -156,7 +200,7 @@ public class NetServer implements Node {
 	}
 
 	// append a line to specific file
-	private void appendLine(File file, String line) {
+	private synchronized void appendLine(File file, String line) {
 		RandomAccessFile raf = null;
 		try {
 			raf = new RandomAccessFile(file, "rw");
@@ -174,6 +218,18 @@ public class NetServer implements Node {
 				}
 			}
 		}
+	}
+	
+	private synchronized String readAll(String replica_name) {
+		StringBuffer sb = new StringBuffer();
+		try (RandomAccessFile raf = new RandomAccessFile(FILEPREFIX + replica_name, "r")) {
+			byte[] bytes = new byte[(int)raf.length()];
+			raf.readFully(bytes);
+			sb.append(new String(bytes));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return sb.toString();
 	}
 
 	@Override
@@ -231,6 +287,57 @@ public class NetServer implements Node {
 					System.err.println("Not Wait for Receiving COMMIT");
 				}
 			}
+		}else if(realClazz.equals(WakeUpMessage.class.getSimpleName())) {
+			WakeUpMessage wMessage = (WakeUpMessage) message;
+			System.out.println("receive WakeUpMessage: " + wMessage);
+			if(wMessage.getType().equals(MsgType.QUERY_VERSION)) {
+				int version = wMessage.getVersion();
+				String replica_name = wMessage.getReplica();
+				if(version != -1) {
+					replica_version.put(replica_name, version);
+					WakeUpMessage get_content = new WakeUpMessage.WakeUpMessageBuilder()
+							.content("")
+							.replica(replica_name)
+							.version(version)
+							.build();
+					get_content.setClock(0);
+					get_content.setReceiver(wMessage.getRemote());
+					get_content.setSender(id);
+					get_content.setType(MsgType.GET_CONTENT);
+					private_Message(get_content);
+				}else {
+					version_ack.remove(replica_name);
+				}
+			}else if(wMessage.getType().equals(MsgType.GET_CONTENT)) {
+				String replica_name = wMessage.getReplica();
+				String content = readAll(replica_name);
+				WakeUpMessage send_content = new WakeUpMessage.WakeUpMessageBuilder()
+						.content(content)
+						.replica(replica_name)
+						.version(replica_version.get(replica_name))
+						.build();
+				send_content.setClock(0);
+				send_content.setReceiver(wMessage.getSender());
+				send_content.setSender(wMessage.getReceiver());
+				send_content.setType(MsgType.SEND_CONTENT);
+				private_Message(send_content);
+				//????
+			}else if(wMessage.getType().equals(MsgType.SEND_CONTENT)) {
+				String recover_content = wMessage.getContent();
+				String replica_name = wMessage.getReplica();
+				overwrite_replica(replica_name, recover_content);
+				version_ack.remove(replica_name);
+			}
+		}
+	}
+	
+	private synchronized void overwrite_replica(String replica_name, String content) {
+		try (FileWriter fw = new FileWriter(FILEPREFIX + replica_name, false)) {
+			fw.write(content);
+			fw.flush();
+			fw.close();
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 	
@@ -243,6 +350,7 @@ public class NetServer implements Node {
 	private synchronized String randomReadLine(String chunk_name, long offset) {
 		StringBuffer sb = new StringBuffer();
 		try (RandomAccessFile raf = new RandomAccessFile(FILEPREFIX + chunk_name, "r")) {
+			System.out.println("offset !!!!!!!!!!!!!!!!!!!!!!!!!!! " + offset);
 			long end = ThreadLocalRandom.current().nextLong(offset, raf.length());
 			int len = (int) (end - offset);
 			byte[] bytes = new byte[len];
@@ -306,7 +414,8 @@ public class NetServer implements Node {
 		}
 		NetServer server = new NetServer(args[0]);
 		server.init();
-
+		// System.out.println(server.readAll("b@2"));
+		// server.overwrite_replica("b@2", "Hello Hello \n Hello Hello \n Hello Hello \n");
 		// System.out.println(server.clientNeighbors);
 		// System.out.println(server.serverNeighbors);
 		// System.out.println(server.mserverID);
