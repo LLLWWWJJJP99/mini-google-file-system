@@ -11,7 +11,7 @@ public class WakeUpMessage extends Message implements Serializable {
 	private int version;
 	private String content;
 	private String replica;
-
+	private String recover_replica;
 	public int getVersion() {
 		return version;
 	}
@@ -23,12 +23,17 @@ public class WakeUpMessage extends Message implements Serializable {
 	public int getRemote() {
 		return remote;
 	}
-
+	
+	public String getRecover_replica() {
+		return recover_replica;
+	}
+	
 	public static class WakeUpMessageBuilder {
 		private int version;
 		private String content;
 		private int remote;
 		private String replica;
+		private String recover_replica;
 
 		public WakeUpMessage build() {
 			return new WakeUpMessage(this);
@@ -53,6 +58,11 @@ public class WakeUpMessage extends Message implements Serializable {
 			this.replica = replica;
 			return this;
 		}
+		
+		public WakeUpMessageBuilder recover_replica(String recover_replica) {
+			this.recover_replica = recover_replica;
+			return this;
+		}
 	}
 
 	public WakeUpMessage(WakeUpMessageBuilder builder) {
@@ -60,14 +70,14 @@ public class WakeUpMessage extends Message implements Serializable {
 		this.content = builder.content;
 		this.remote = builder.remote;
 		this.replica = builder.replica;
+		this.recover_replica = builder.recover_replica;
 	}
 	
-	
-	
+
 	@Override
 	public String toString() {
 		return "WakeUpMessage [remote=" + remote + ", version=" + version + ", content=" + content + ", replica="
-				+ replica + ", toString()=" + super.toString() + "]";
+				+ replica + ", recover_replica=" + recover_replica + ", toString()=" + super.toString() + "]";
 	}
 
 	public String getContent() {

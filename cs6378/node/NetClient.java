@@ -174,6 +174,7 @@ public class NetClient implements Node {
 	 */
 	@Override
 	public synchronized void process_Message(Message message) {
+		System.err.println(id + " receivers " + message);
 		String realClazz = message.getClass().getSimpleName();
 		// receive message for critical selection and login
 		if (realClazz.equals(Message.class.getSimpleName())) {
@@ -193,8 +194,8 @@ public class NetClient implements Node {
 				if (algorithm.process_request(message)) {
 					private_Message(message.getSender(), MsgType.REPLY, null);
 				} else {
-					System.err.println("Message is defered: " + message);
-					System.err.println("My req time: " + algorithm.getOur_request_clock());
+					System.out.println("Message is defered: " + message);
+					System.out.println("My req time: " + algorithm.getOur_request_clock());
 				}
 			}
 			// receive message for file operation
@@ -270,7 +271,7 @@ public class NetClient implements Node {
 
 	public void request_critical_section() {
 		int times = 0;
-		while (times < 5) {
+		while (times < 3) {
 
 			algorithm.setReques_critical_section(true);
 			broadcast(MsgType.REQUEST);
@@ -285,7 +286,6 @@ public class NetClient implements Node {
 			System.out.println(id + " enters cs ");
 			// enter critical_section
 			enter_critical_section();
-			System.out.println(algorithm.getClock());
 			log();
 			// exit_critical_section
 			for (int neighbor : algorithm.getDefered_reply()) {
@@ -296,7 +296,7 @@ public class NetClient implements Node {
 			System.out.println(id + " exits cs ");
 			times++;
 
-			int waitTime = 15;
+			int waitTime = 30;
 			// rest 10s to make next request
 			while (waitTime > 0) {
 				try {
@@ -311,6 +311,10 @@ public class NetClient implements Node {
 					System.err.println("Wait for 5 seconds to make next request");
 				} else if (waitTime == 15) {
 					System.err.println("Wait for 15 seconds to make next request");
+				} else if(waitTime == 20) {
+					System.err.println("Wait for 20 seconds to make next request");
+				} else if (waitTime == 25) {
+					System.err.println("Wait for 25 seconds to make next request");
 				}
 			}
 		}
@@ -322,7 +326,7 @@ public class NetClient implements Node {
 	 */
 	private void enter_critical_section() {
 		Random rand = new Random();
-		int choice = rand.nextInt(8);
+		int choice = rand.nextInt(10);
 		if (choice >= 4) {
 			two_phase_commit();
 			System.err.println("Success In Two Phases Commit");
@@ -331,15 +335,15 @@ public class NetClient implements Node {
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
-			private_Message(mserverID, MsgType.READ, null);
+			private_Message(mserverID, MsgType.APPEND, null);
 		} else if (choice > 1 && choice < 4) {
-			private_Message(mserverID, MsgType.READ, null);
+			private_Message(mserverID, MsgType.APPEND, null);
 		} else if (choice <= 1) {
-			private_Message(mserverID, MsgType.READ, null);
+			private_Message(mserverID, MsgType.APPEND, null);
 		}
 	}
 
-	private boolean get_alive_servers() {
+	private synchronized boolean get_alive_servers() {
 		return commit_ack.size() != 0;
 	}
 

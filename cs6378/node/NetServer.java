@@ -94,7 +94,7 @@ public class NetServer implements Node {
 		
 		version_ack.addAll(replica_version.keySet());
 		prepare_wakeup();
-		
+		System.err.println(id + " Wakes Up.");
 		// start to send heartbeat message
 		sendHeartbeatMessage();
 	}
@@ -114,14 +114,12 @@ public class NetServer implements Node {
 		}
 		
 		while(version_ack.size() > 0) {
-			System.err.println("left ack to receive : " + version_ack);
 			try {
 				Thread.sleep(50);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
 		}
-		System.err.println("left ack to receive : " + version_ack);
 	}
 	
 	private void sendHeartbeatMessage() {
@@ -156,11 +154,12 @@ public class NetServer implements Node {
 
 	/**
 	 * create a new chunk and append the content into it
-	 * @param chuck_name chosen new chunk name
+	 * @param replica_name chosen new chunk name
 	 * @param content content to be appended to the new chunk
 	 */
-	private synchronized void createFileWithContent(String chuck_name, String content) {
-		File file = new File(FILEPREFIX + chuck_name);
+	private synchronized void createFileWithContent(String replica_name, String content) {
+		replica_version.put(replica_name, 0);
+		File file = new File(FILEPREFIX + replica_name);
 		RandomAccessFile raf = null;
 		try {
 			if (file.createNewFile()) {
@@ -186,10 +185,11 @@ public class NetServer implements Node {
 	
 	/**
 	 * create an empty new chunk
-	 * @param chuck_name
+	 * @param replica_name
 	 */
-	private synchronized void create_file(String chuck_name) {
-		File file = new File(FILEPREFIX + chuck_name);
+	private synchronized void create_file(String replica_name) {
+		replica_version.put(replica_name, 0);
+		File file = new File(FILEPREFIX + replica_name);
 		try {
 			if (!file.createNewFile()) {
 				System.err.println(file.getName() + " File Already Exisits");
@@ -234,6 +234,7 @@ public class NetServer implements Node {
 
 	@Override
 	public synchronized void process_Message(Message message) {
+		System.err.println(id + " receivers " + message);
 		String realClazz = message.getClass().getSimpleName();
 		// meta server tells server to create a new chunk directly
 		if (realClazz.equals(MetaMessage.class.getSimpleName())) {
@@ -246,7 +247,9 @@ public class NetServer implements Node {
 			DataMessage dMessage = (DataMessage) message;
 			// append a new line to chosen file
 			if (dMessage.getType().equals(MsgType.APPEND)) {
-				appendLine(new File(FILEPREFIX + dMessage.getFilaName()), dMessage.getContent());
+				String replica_name = dMessage.getFilaName();
+				replica_version.put(replica_name, replica_version.get(replica_name) + 1);
+				appendLine(new File(FILEPREFIX + replica_name), dMessage.getContent());
 			// create a new chunk and insert content
 			} else if (dMessage.getType().equals(MsgType.CREATE)) {
 				createFileWithContent(dMessage.getFilaName(), dMessage.getContent());
@@ -254,7 +257,6 @@ public class NetServer implements Node {
 			} else if(dMessage.getType().equals(MsgType.READ)) {
 				String chunk_name = dMessage.getFilaName();
 				String content = randomReadLine(chunk_name, dMessage.getOffset());
-				System.out.println("content: " + content);
 				DataMessage reply = new DataMessage();
 				reply.setClock(dMessage.getClock());
 				reply.setFilaName(chunk_name);
@@ -289,7 +291,7 @@ public class NetServer implements Node {
 			}
 		}else if(realClazz.equals(WakeUpMessage.class.getSimpleName())) {
 			WakeUpMessage wMessage = (WakeUpMessage) message;
-			System.out.println("receive WakeUpMessage: " + wMessage);
+			System.err.println("receive WakeUpMessage: " + wMessage);
 			if(wMessage.getType().equals(MsgType.QUERY_VERSION)) {
 				int version = wMessage.getVersion();
 				String replica_name = wMessage.getReplica();
@@ -298,6 +300,7 @@ public class NetServer implements Node {
 					WakeUpMessage get_content = new WakeUpMessage.WakeUpMessageBuilder()
 							.content("")
 							.replica(replica_name)
+							.recover_replica(wMessage.getRecover_replica())
 							.version(version)
 							.build();
 					get_content.setClock(0);
@@ -313,7 +316,7 @@ public class NetServer implements Node {
 				String content = readAll(replica_name);
 				WakeUpMessage send_content = new WakeUpMessage.WakeUpMessageBuilder()
 						.content(content)
-						.replica(replica_name)
+						.replica(wMessage.getRecover_replica())
 						.version(replica_version.get(replica_name))
 						.build();
 				send_content.setClock(0);
@@ -321,7 +324,6 @@ public class NetServer implements Node {
 				send_content.setSender(wMessage.getReceiver());
 				send_content.setType(MsgType.SEND_CONTENT);
 				private_Message(send_content);
-				//????
 			}else if(wMessage.getType().equals(MsgType.SEND_CONTENT)) {
 				String recover_content = wMessage.getContent();
 				String replica_name = wMessage.getReplica();
@@ -350,7 +352,9 @@ public class NetServer implements Node {
 	private synchronized String randomReadLine(String chunk_name, long offset) {
 		StringBuffer sb = new StringBuffer();
 		try (RandomAccessFile raf = new RandomAccessFile(FILEPREFIX + chunk_name, "r")) {
-			System.out.println("offset !!!!!!!!!!!!!!!!!!!!!!!!!!! " + offset);
+			if(raf.length() == 0) {
+				return "Empty File";
+			}
 			long end = ThreadLocalRandom.current().nextLong(offset, raf.length());
 			int len = (int) (end - offset);
 			byte[] bytes = new byte[len];
