@@ -110,8 +110,20 @@ Extented Functionalities: File system with replicated chunks
 4. use java -jar gserver.jar serverid(you should jot it down in config.txt) to start a server
 5. use java -jar gmserver.jar (you should jot it down in config.txt) to start a metaserver
 
+![alt text](https://github.com/DavidLi210/mini-google-file-system/blob/master/config.png)
+
+```
+Figure 2(here for config2.txt): Easiest Way to Set Up the Project. Put all these files in same folder.
+```
+
+
 ```
 You should set up file directories like the one i provide here. files+serverid eg: files1, files2... 
+files1 corresponds to file folder on file server 1, files2 corresponds to file folder on file server 2.. so on so forth
+This means each file server should have a file folder like that.
+
+One more thing to keep in mind is that while the client is making request, you should not break down file server to test fault recovery, because here the two phase commit protocol assumes that there is no process failure while client is making request. So when you see the program prints out all “30/20sleft to make next request” , its safe to break down file server (when it’s longer than 15s to make next request, since metaserver will learns that this file server is down).
+
 Feel free to contact me to get more details about how to run the project. My Email:wxl163530@gmail.com
 ```
 
