@@ -292,6 +292,7 @@ public class MetaServer implements Node {
 						alive_servers.add(server.getKey());
 					}
 				}
+				System.err.println( id + " sends alive_servers: " + alive_servers);
 				CommitMessage get_alive_servers = new CommitMessage.CommitMessageBuilder()
 						.clock(0)
 						.alive_servers(alive_servers)

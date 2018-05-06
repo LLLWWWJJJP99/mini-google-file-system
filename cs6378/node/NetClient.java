@@ -252,6 +252,7 @@ public class NetClient implements Node {
 			CommitMessage cmMessage = (CommitMessage) message;
 			if(cmMessage.getType().equals(MsgType.GET_ALIVE_SERVERS)) {
 				commit_ack.addAll(cmMessage.getAlive_servers());
+				System.err.println(id + " receives commit_ack " + commit_ack);
 			}else if(cmMessage.getType().equals(MsgType.AGREE)) {
 				commit_ack.remove(new Integer(cmMessage.getSender()));
 				System.err.println("commit_ack remove one : " + commit_ack);
@@ -271,7 +272,7 @@ public class NetClient implements Node {
 
 	public void request_critical_section() {
 		int times = 0;
-		while (times < 3) {
+		while (times < 5) {
 
 			algorithm.setReques_critical_section(true);
 			broadcast(MsgType.REQUEST);
